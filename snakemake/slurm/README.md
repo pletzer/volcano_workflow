@@ -2,7 +2,7 @@
 
 Same workflow as [`../simple`](../simple), extended so that each of the 10
 independent `run_task` jobs (and the final `sum_times` job) is submitted as
-its own SLURM job.
+its own SLURM job, using Snakemake's `slurm` executor plugin.
 
 ## Layout
 
@@ -13,33 +13,27 @@ its own SLURM job.
   memory, runtime, cpus) so Snakemake can submit it via `sbatch`.
 - `profile/config.yaml` — a Snakemake
   [workflow profile](https://snakemake.readthedocs.io/en/stable/executing/cli.html#profiles)
-  that enables SLURM submission and sets defaults for per-job resources.
+  that selects the `slurm` executor and sets defaults for per-job resources.
 
 ## Requirements (Mahuika)
 
-Snakemake is provided by the module system — no `pip install` needed:
+`module load snakemake` on its own may resolve to an older, pre-8.0
+release that doesn't support the executor-plugin architecture this profile
+uses (`executor: slurm`). Load the versioned module instead:
 
 ```bash
-module load snakemake
+module load snakemake/9.16.3
 ```
 
-Note: as of this writing, Mahuika's `snakemake` module is a pre-8.0 release,
-i.e. it predates Snakemake's executor-plugin architecture (`--executor`,
-`executor: slurm`). This example instead uses the older built-in
-generic-cluster support, enabled with `slurm: true` in `profile/config.yaml`
-(equivalent to the `--slurm` command-line flag) — the same `resources:`
-names (`slurm_partition`, `mem_mb`, `runtime`, `cpus_per_task`) work with
-both the old and new Snakemake SLURM integrations, so the `Snakefile` itself
-did not need to change. Run `snakemake --version` to check which you have;
-if it's 8.0 or later, switch `slurm: true` back to `executor: slurm` and use
-`--executor slurm` in the command-line examples below.
+Run `ml spider snakemake` to see available versions if `9.16.3` has since
+been superseded.
 
 ## Account
 
 If your NeSI account has more than one project code, or the wrong one is
-being picked up by default, set it explicitly (see the SLURM resource
-options in `snakemake --help`, e.g. `--set-resources` below) — replace
-`your_project_code` with the account you'd pass to `sbatch --account`.
+being picked up by default, set it explicitly with `--set-resources` (see
+below) — replace `your_project_code` with the account you'd pass to
+`sbatch --account`.
 
 ## Running the workflow
 
@@ -47,7 +41,7 @@ From this directory, on a Mahuika login node:
 
 ```bash
 cd slurm
-module load snakemake
+module load snakemake/9.16.3
 snakemake --profile profile
 ```
 
@@ -73,7 +67,7 @@ You can also pass everything on the command line instead of using
 `profile/config.yaml`:
 
 ```bash
-snakemake --slurm --jobs 10 \
+snakemake --executor slurm --jobs 10 \
     --default-resources slurm_account=your_project_code slurm_partition=milan mem_mb=512 runtime=5
 ```
 

@@ -1,14 +1,16 @@
 # Snakemake workflow profile for running the "slurm" example on Mahuika (NeSI).
 #
 # Usage (from the slurm/ directory):
+#   module load snakemake/9.16.3
 #   snakemake --profile profile
 #
-# Mahuika's `module load snakemake` currently provides a pre-8.0 Snakemake,
-# i.e. before the executor-plugin architecture (`executor: slurm`,
-# `--executor slurm`). SLURM submission is instead enabled here via the
-# older built-in generic-cluster support, selected with `slurm: true`.
+# Requires Snakemake >= 8 (executor-plugin architecture) with the
+# snakemake-executor-plugin-slurm plugin available -- both are provided by
+# the snakemake/9.16.3 module on Mahuika. Do not use the default `snakemake`
+# module without a version pin: it may resolve to an older pre-8.0 release
+# (e.g. 7.32.3) that does not understand `executor: slurm`.
 
-slurm: true
+executor: slurm
 jobs: 10
 latency-wait: 60
 default-resources:
