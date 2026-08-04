@@ -18,7 +18,6 @@ rule run_task:
     retries: MAX_RETRIES
     resources:
         slurm_partition="milan",
-        mem_mb=512,
         cpus_per_task=1,
         # Any task whose sleep=X exceeds the current attempt's walltime gets
         # killed by SLURM for hitting the time limit; Snakemake sees the job
@@ -32,6 +31,15 @@ rule run_task:
         # is ours to choose -- e.g. `attempt * 10` or `2 ** attempt` would
         # give a different growth rate.
         runtime=lambda wildcards, attempt: attempt,
+        # Snakemake's retries only know that a job failed, not why -- it
+        # can't tell a SLURM TIMEOUT (see runtime, above) apart from an
+        # OUT_OF_MEMORY kill or any other failure (check `sacct -j <jobid>
+        # --format=State,MaxRSS,ReqMem,Elapsed,Timelimit` or `seff <jobid>`
+        # to find out which one actually happened). Since the resource
+        # function has no way to see that, we grow mem_mb defensively on
+        # every retry too, so a job that was actually killed for being
+        # short on memory also gets more room next attempt.
+        mem_mb=lambda wildcards, attempt: 512 * attempt,
     run:
         import re
         import time

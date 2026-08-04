@@ -17,24 +17,34 @@ directive together with the `attempt` wildcard, which can be referenced from
 rule run_task:
     retries: 2                                    # up to 2 resubmissions (3 attempts total)
     resources:
-        runtime=lambda wildcards, attempt: attempt,  # 1 min, then 2 min, then 3 min
+        runtime=lambda wildcards, attempt: attempt,       # 1 min, then 2 min, then 3 min
+        mem_mb=lambda wildcards, attempt: 512 * attempt,  # 512, then 1024, then 1536 MB
     run:
         ...
 ```
 
 No custom retry code is needed. On each submission:
 
-1. Snakemake submits the job via `sbatch` with the walltime for the current
-   `attempt` (1 minute on attempt 1, 2 minutes on attempt 2, 3 minutes on
-   attempt 3).
+1. Snakemake submits the job via `sbatch` with the walltime and memory for
+   the current `attempt` (1 minute / 512 MB on attempt 1, 2 minutes / 1024 MB
+   on attempt 2, 3 minutes / 1536 MB on attempt 3).
 2. If the task's `sleep=X` value is longer than the walltime, SLURM kills the
    job for hitting the time limit (state `TIMEOUT`/`CANCELLED`).
 3. Snakemake sees the job did not complete successfully. Because `retries: 2`
    is set on the rule, it resubmits the same job with `attempt` incremented,
-   which recomputes `runtime` to a larger value.
+   which recomputes `runtime` (and `mem_mb`) to larger values.
 4. This repeats until the job succeeds or `retries` is exhausted (3 failed
    attempts), in which case Snakemake reports the job — and the whole
    workflow — as failed.
+
+Note that Snakemake's `retries` only know that a job failed, not *why* --
+`attempt` is incremented the same way whether SLURM killed the job for
+`TIMEOUT`, `OUT_OF_MEMORY`, or something else entirely. This example only
+demonstrates the timeout case (`sleep=X` vs. `runtime`), but `mem_mb` is
+grown on every retry too, defensively, in case a real job actually needed
+more memory rather than more time. To see which one actually happened for a
+given job, check `sacct` or `seff` (see "Monitoring jobs" below) rather than
+relying on the workflow to tell you.
 
 The input `sleep=X` values in `inputs/` are deliberately spread across three
 ranges so you should see all three behaviours in one run:
@@ -103,11 +113,15 @@ and is being retried.
 
 ```bash
 squeue --me
-sacct -X --format=JobID,JobName,Partition,State,Elapsed,Timelimit
+sacct -X --format=JobID,JobName,Partition,State,Elapsed,Timelimit,MaxRSS,ReqMem
+seff <jobid>
 ```
 
 Look for `State=TIMEOUT` or `CANCELLED` entries followed by a new job ID for
-the same task — that's a resubmission with a larger `runtime`.
+the same task — that's a resubmission with a larger `runtime`. A
+`State=OUT_OF_MEMORY` entry instead means the job was actually killed for
+running out of memory, not time; `MaxRSS` close to or above `ReqMem` (or
+`seff`'s "Memory Utilized" close to 100%) confirms it.
 
 ## Output
 
