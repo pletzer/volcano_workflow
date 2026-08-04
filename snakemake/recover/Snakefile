@@ -20,11 +20,17 @@ rule run_task:
         slurm_partition="milan",
         mem_mb=512,
         cpus_per_task=1,
-        # Deliberately tight on the first attempt: 1 minute, then 2, then 3.
         # Any task whose sleep=X exceeds the current attempt's walltime gets
         # killed by SLURM for hitting the time limit; Snakemake sees the job
         # as failed and, thanks to `retries` above, resubmits it with the
         # next (larger) runtime automatically -- up to MAX_RETRIES times.
+        #
+        # `attempt` is supplied by Snakemake: an integer starting at 1 for
+        # the first submission and incremented by 1 on each resubmission
+        # (1, 2, 3, ...). Here runtime (in minutes) is set equal to attempt,
+        # so walltime grows linearly: 1 minute, then 2, then 3. This formula
+        # is ours to choose -- e.g. `attempt * 10` or `2 ** attempt` would
+        # give a different growth rate.
         runtime=lambda wildcards, attempt: attempt,
     run:
         import re
