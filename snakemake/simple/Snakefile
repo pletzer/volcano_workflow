@@ -1,0 +1,42 @@
+NTASKS = 10
+TASKS = list(range(1, NTASKS + 1))
+
+
+rule all:
+    input:
+        "results/total_time.txt"
+
+
+rule run_task:
+    input:
+        "inputs/task_{i}.txt"
+    output:
+        "results/task_{i}.time"
+    run:
+        import re
+        import time
+
+        start = time.time()
+        with open(input[0]) as f:
+            content = f.read()
+        sleep_val = int(re.search(r"sleep=(\d+)", content).group(1))
+        time.sleep(sleep_val)
+        elapsed = time.time() - start
+
+        with open(output[0], "w") as f:
+            f.write(f"{elapsed:.6f}\n")
+
+
+rule sum_times:
+    input:
+        expand("results/task_{i}.time", i=TASKS)
+    output:
+        "results/total_time.txt"
+    run:
+        total = 0.0
+        for fname in input:
+            with open(fname) as f:
+                total += float(f.read().strip())
+
+        with open(output[0], "w") as f:
+            f.write(f"{total:.6f}\n")
