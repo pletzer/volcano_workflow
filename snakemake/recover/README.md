@@ -53,6 +53,12 @@ task is expected to eventually succeed within the 3 allowed attempts.
 module load snakemake
 ```
 
+Note: this uses the same `slurm: true` generic-cluster SLURM support as
+[`../slurm`](../slurm) (rather than the newer `executor: slurm`), to match
+the pre-8.0 Snakemake provided by Mahuika's module system. See that
+example's README for details; the `retries:`/`attempt` mechanism used here
+is unaffected by this and works the same on both Snakemake versions.
+
 ## Running the workflow
 
 From this directory:
@@ -76,9 +82,13 @@ To watch resubmissions happen live, run in the foreground and keep an eye on
 ### Overriding the number of attempts or the account
 
 ```bash
-snakemake --profile profile --retries 4
+snakemake --profile profile -T 4
 snakemake --profile profile --set-resources slurm_account=your_project_code
 ```
+
+(`-T` overrides the default max-retries for rules that don't set their own
+`retries:`; it will not reduce `run_task`'s explicit `retries: 2` below 2. To
+change `run_task` itself, edit `MAX_RETRIES` in the `Snakefile`.)
 
 ### Dry run
 

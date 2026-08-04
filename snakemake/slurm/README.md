@@ -2,7 +2,7 @@
 
 Same workflow as [`../simple`](../simple), extended so that each of the 10
 independent `run_task` jobs (and the final `sum_times` job) is submitted as
-its own SLURM job, using Snakemake's `slurm` executor plugin.
+its own SLURM job.
 
 ## Layout
 
@@ -13,32 +13,33 @@ its own SLURM job, using Snakemake's `slurm` executor plugin.
   memory, runtime, cpus) so Snakemake can submit it via `sbatch`.
 - `profile/config.yaml` — a Snakemake
   [workflow profile](https://snakemake.readthedocs.io/en/stable/executing/cli.html#profiles)
-  that selects the `slurm` executor and sets defaults for the SLURM account,
-  partition, and per-job resources.
+  that enables SLURM submission and sets defaults for per-job resources.
 
 ## Requirements (Mahuika)
 
-Snakemake and the SLURM executor plugin are provided by the module system —
-no `pip install` needed:
+Snakemake is provided by the module system — no `pip install` needed:
 
 ```bash
 module load snakemake
 ```
 
-## One-time setup
+Note: as of this writing, Mahuika's `snakemake` module is a pre-8.0 release,
+i.e. it predates Snakemake's executor-plugin architecture (`--executor`,
+`executor: slurm`). This example instead uses the older built-in
+generic-cluster support, enabled with `slurm: true` in `profile/config.yaml`
+(equivalent to the `--slurm` command-line flag) — the same `resources:`
+names (`slurm_partition`, `mem_mb`, `runtime`, `cpus_per_task`) work with
+both the old and new Snakemake SLURM integrations, so the `Snakefile` itself
+did not need to change. Run `snakemake --version` to check which you have;
+if it's 8.0 or later, switch `slurm: true` back to `executor: slurm` and use
+`--executor slurm` in the command-line examples below.
 
-Edit `profile/config.yaml` and replace `<your_nesi_account>` with your NeSI
-project/account code (the same one you pass to `sbatch --account` /
-`salloc --account`):
+## Account
 
-```yaml
-default-resources:
-  slurm_account: "your_project_code"
-  ...
-```
-
-Alternatively, leave the file as-is and override the account on the command
-line for every run (see below).
+If your NeSI account has more than one project code, or the wrong one is
+being picked up by default, set it explicitly (see the SLURM resource
+options in `snakemake --help`, e.g. `--set-resources` below) — replace
+`your_project_code` with the account you'd pass to `sbatch --account`.
 
 ## Running the workflow
 
@@ -54,7 +55,7 @@ This submits up to 10 `run_task` SLURM jobs concurrently (one per input
 file), and once all 10 have finished, submits the `sum_times` job which
 aggregates their elapsed times.
 
-If you didn't edit `profile/config.yaml`, supply the account inline instead:
+To set (or override) the account for a run:
 
 ```bash
 snakemake --profile profile --set-resources slurm_account=your_project_code
@@ -72,7 +73,7 @@ You can also pass everything on the command line instead of using
 `profile/config.yaml`:
 
 ```bash
-snakemake --executor slurm --jobs 10 \
+snakemake --slurm --jobs 10 \
     --default-resources slurm_account=your_project_code slurm_partition=milan mem_mb=512 runtime=5
 ```
 

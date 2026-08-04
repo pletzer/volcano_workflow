@@ -2,11 +2,19 @@
 #
 # Usage (from the recover/ directory):
 #   snakemake --profile profile
+#
+# Mahuika's `module load snakemake` currently provides a pre-8.0 Snakemake,
+# i.e. before the executor-plugin architecture (`executor: slurm`,
+# `--executor slurm`). SLURM submission is instead enabled here via the
+# older built-in generic-cluster support, selected with `slurm: true`.
+#
+# Per-task retry behaviour (up to 3 attempts, larger runtime each time) is
+# controlled by the `retries:` directive on the run_task rule in the
+# Snakefile itself, not by a setting in this profile.
 
-executor: slurm
+slurm: true
 jobs: 10
 latency-wait: 60
-retries: 2
 default-resources:
   mem_mb: 512
   runtime: 5

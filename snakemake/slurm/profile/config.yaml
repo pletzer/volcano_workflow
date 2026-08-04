@@ -3,10 +3,12 @@
 # Usage (from the slurm/ directory):
 #   snakemake --profile profile
 #
-# IMPORTANT: set slurm_account below to your NeSI project code before
-# running, or override it on the command line -- see README.md.
+# Mahuika's `module load snakemake` currently provides a pre-8.0 Snakemake,
+# i.e. before the executor-plugin architecture (`executor: slurm`,
+# `--executor slurm`). SLURM submission is instead enabled here via the
+# older built-in generic-cluster support, selected with `slurm: true`.
 
-executor: slurm
+slurm: true
 jobs: 10
 latency-wait: 60
 default-resources:
