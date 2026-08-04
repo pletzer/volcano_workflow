@@ -1,0 +1,13 @@
+# Snakemake workflow profile for running the "recover" example on Mahuika (NeSI).
+#
+# Usage (from the recover/ directory):
+#   snakemake --profile profile
+
+executor: slurm
+jobs: 10
+latency-wait: 60
+retries: 2
+default-resources:
+  mem_mb: 512
+  runtime: 5
+  cpus_per_task: 1

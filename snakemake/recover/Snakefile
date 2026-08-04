@@ -1,0 +1,61 @@
+NTASKS = 10
+TASKS = list(range(1, NTASKS + 1))
+
+# Total attempts per task = 1 initial submission + MAX_RETRIES resubmissions.
+MAX_RETRIES = 2
+
+
+rule all:
+    input:
+        "results/total_time.txt"
+
+
+rule run_task:
+    input:
+        "inputs/task_{i}.txt"
+    output:
+        "results/task_{i}.time"
+    retries: MAX_RETRIES
+    resources:
+        slurm_partition="milan",
+        mem_mb=512,
+        cpus_per_task=1,
+        # Deliberately tight on the first attempt: 1 minute, then 2, then 3.
+        # Any task whose sleep=X exceeds the current attempt's walltime gets
+        # killed by SLURM for hitting the time limit; Snakemake sees the job
+        # as failed and, thanks to `retries` above, resubmits it with the
+        # next (larger) runtime automatically -- up to MAX_RETRIES times.
+        runtime=lambda wildcards, attempt: attempt,
+    run:
+        import re
+        import time
+
+        start = time.time()
+        with open(input[0]) as f:
+            content = f.read()
+        sleep_val = int(re.search(r"sleep=(\d+)", content).group(1))
+        time.sleep(sleep_val)
+        elapsed = time.time() - start
+
+        with open(output[0], "w") as f:
+            f.write(f"{elapsed:.6f}\n")
+
+
+rule sum_times:
+    input:
+        expand("results/task_{i}.time", i=TASKS)
+    output:
+        "results/total_time.txt"
+    resources:
+        slurm_partition="milan",
+        mem_mb=256,
+        cpus_per_task=1,
+        runtime=5,
+    run:
+        total = 0.0
+        for fname in input:
+            with open(fname) as f:
+                total += float(f.read().strip())
+
+        with open(output[0], "w") as f:
+            f.write(f"{total:.6f}\n")
