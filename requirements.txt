@@ -8,3 +8,4 @@ seislib
 bayesbay
 joblib
 defopt
+vtk
