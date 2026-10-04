@@ -1,0 +1,10 @@
+numpy
+scipy
+matplotlib
+obspy
+cartopy
+tqdm
+seislib
+bayesbay
+joblib
+defopt

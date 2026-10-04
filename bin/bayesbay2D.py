@@ -20,12 +20,24 @@ import bayesbay as bb
 import os
 import glob
 from joblib.externals.loky import get_reusable_executor
+import defopt
 
 
+def parse_args(*, data: str, target_period: float, results_dir: str):
+    """
+    Bayesian 2D Rayleigh-wave velocity inversion using bayesbay.
 
-disp_dir = "./data/"
+    :param data: directory containing sources.dat and observed_t.dat
+    :param target_period: target period in seconds
+    :param results_dir: directory where the results are written
+    """
+    return data, target_period, results_dir
 
-station_coords = np.loadtxt(disp_dir+"sources.dat",skiprows=1)
+
+disp_dir, target_period, results_dir = defopt.run(parse_args)
+os.makedirs(results_dir, exist_ok=True)
+
+station_coords = np.loadtxt(os.path.join(disp_dir, "sources.dat"),skiprows=1)
 stat_pairs = []
 stat_dist = []
 
@@ -48,7 +60,7 @@ for i in range(N):
 
 stat_pairs = np.array(stat_pairs)
 stat_dist = np.array(stat_dist)
-travel_times = np.loadtxt(disp_dir+"observed_t.dat",usecols=1)
+travel_times = np.loadtxt(os.path.join(disp_dir, "observed_t.dat"),usecols=1)
 print(np.shape(travel_times))
 mask = travel_times > 0
 #mask_mat = mask[:,None]
@@ -56,7 +68,6 @@ mask = travel_times > 0
 #print(np.shape(mask_mat))
 d_obs = travel_times[mask]/stat_dist[mask]
 
-target_period = 3.0
 period_tol = 0.5
 
 
@@ -213,11 +224,11 @@ fig.subplots_adjust(top=0.90)
 
 fig.canvas.draw()
 
-plt.savefig("./results/velocity_map.png", dpi=200)
-np.savetxt("./results/inferred_vel.txt", inferred_vel)
-np.savetxt("./results/inferred_vel_std.txt", inferred_vel_std)
-np.savetxt("./results/mean_vel.txt", stat_mean) #np.array(stat_vec['mean']))
-np.savetxt("./results/medi_vel.txt", stat_medi) #np.array(stat_vec['median']))
-np.savetxt("./results/std_vel.txt", stat_vstd) #np.array(stat_vec['std']))
-np.savetxt("./results/grid.txt", grid_points)
+plt.savefig(os.path.join(results_dir, "velocity_map.png"), dpi=200)
+np.savetxt(os.path.join(results_dir, "inferred_vel.txt"), inferred_vel)
+np.savetxt(os.path.join(results_dir, "inferred_vel_std.txt"), inferred_vel_std)
+np.savetxt(os.path.join(results_dir, "mean_vel.txt"), stat_mean) #np.array(stat_vec['mean']))
+np.savetxt(os.path.join(results_dir, "medi_vel.txt"), stat_medi) #np.array(stat_vec['median']))
+np.savetxt(os.path.join(results_dir, "std_vel.txt"), stat_vstd) #np.array(stat_vec['std']))
+np.savetxt(os.path.join(results_dir, "grid.txt"), grid_points)
 #plt.show()
