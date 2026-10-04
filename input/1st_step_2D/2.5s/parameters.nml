@@ -1,0 +1,123 @@
+
+!
+! This Namelist file contains all available settings and is intended
+! to be used as a template.
+!
+
+&tomosettings
+
+  !
+  ! The input data files
+  !
+  sources_file = './data/sources.dat'
+  receivers_file = './data/receivers.dat'
+  observed_times_file = './data/observed_t.dat'
+  paths_file = './data/pathfile.dat'
+
+  !
+  ! Where to write the output files. Be sure to add a trailing "/"
+  ! if the output is intended to be a directory.
+  !
+  output_prefix = './results/'
+ 
+  !
+  ! The number of iterations to be discarded
+  !
+  burnin = 50000
+
+  ! 
+  ! The total number of iterations to run (per process in the MPI version)
+  !
+  total = 10000000
+
+  ! 
+  ! The minimum and maximum number of partitions
+  !
+  minpartitions = 1
+  maxpartitions = 1000
+  
+  !
+  ! The initial no. of partitions
+  !
+  initpartitions = 50
+  
+  !
+  ! For MPI only, jitter the number of initial partitions about initpartitions.
+  ! In each process, the initial number of partitions will be uniformly 
+  ! distributed between initpartitions - jitterpartitions and initpartitions +
+  ! jitterpartitions.
+  !
+  jitterpartitions = 10
+
+  !
+  ! The longitude and latitude bounds
+  !
+  minlon = 173.8
+  maxlon = 176.3
+  minlat = -37.9
+  maxlat = -35.5
+
+  !
+  ! The standard deviation for random partition moves 
+  !
+  pd = 0.05
+
+  !
+  ! The parameters for the Velocity within each cell in km/s
+  !
+  vs_min = 1.0
+  vs_max = 5.0
+  vs_std_value = 0.1   ! When we change a value, this is the standard deviation
+  vs_std_bd = 0.1     ! For birth/death, this is the standard deviation
+
+  !
+  ! The parameters for the hierarchical factor. Care should be taken in 
+  ! setting these values since if the hiearchical parameter is constrained
+  ! outside its "true" value, this will adversely affect the results, 
+  ! potentially dramatically.
+  !
+  sigma_min = 5.0
+  sigma_max = 10.0
+  sigma_std = 0.1
+
+  ! 
+  ! Use a fixed hierarchical factor. By setting this value to something
+  ! greater than zero will disable hierarchical estimation. This option is left
+  ! commented here in order that the hierarchical estimation runs.
+  !
+  !sigma_fixed = 20.0
+
+  !
+  ! The parameters for controlling the number of points in the discretized
+  ! version of the 2D surface.
+  !
+  xsamples = 100
+  ysamples = 100
+  
+  !
+  ! zsamples specifies the number of bins to be used in the histogram used
+  ! for computing credible intervals.
+  !
+  zsamples = 100
+
+  !
+  ! Setting credible to a value other than 0 will enable computation of
+  ! credible minimum and maximum surfaces which will be outputted to 
+  ! <prefix>credible_min.txt and <prefix>credible_max.txt respectively.
+  !
+  credible = 0
+
+  ! 
+  ! For the serial code, set this to 1 to show progress information
+  !
+  show_progress = 1
+
+  !
+  ! The seed for the random number generator. For serial version the
+  ! RNG is seeded with seed_base and seed_mult is ignored. For the MPI
+  ! version the RNG is seeded with seed_base + mpi_rank*seed_mult.
+  !
+  seed_base = 101
+  seed_mult = 983
+
+/
