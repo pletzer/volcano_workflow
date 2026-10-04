@@ -19,23 +19,40 @@ import bayesbay as bb
 
 import os
 import glob
+import random
 from joblib.externals.loky import get_reusable_executor
 import defopt
 
 
-def parse_args(*, data: str, target_period: float, results_dir: str):
+def parse_args(*, data: str, target_period: float, results_dir: str,
+               checksum: bool = False, seed: int = None,
+               n_iterations: int = 50_000, burnin_iterations: int = 10_000,
+               n_chains: int = 8):
     """
     Bayesian 2D Rayleigh-wave velocity inversion using bayesbay.
 
     :param data: directory containing sources.dat and observed_t.dat
     :param target_period: target period in seconds
     :param results_dir: directory where the results are written
+    :param checksum: print checksums of the results (use with --seed for reproducible values)
+    :param seed: seed of the random number generators, for reproducible runs
+    :param n_iterations: number of iterations per Markov chain
+    :param burnin_iterations: number of burn-in iterations per Markov chain
+    :param n_chains: total number of Markov chains, must be a multiple of 4
     """
-    return data, target_period, results_dir
+    return (data, target_period, results_dir, checksum, seed,
+            n_iterations, burnin_iterations, n_chains)
 
 
-disp_dir, target_period, results_dir = defopt.run(parse_args)
+(disp_dir, target_period, results_dir, checksum, seed,
+ n_iterations, burnin_iterations, n_chains_total) = defopt.run(parse_args)
 os.makedirs(results_dir, exist_ok=True)
+
+# bayesbay draws from the global random and numpy.random generators. The chains
+# run in this process (n_jobs=1), so seeding both makes the results reproducible
+if seed is not None:
+    random.seed(seed)
+    np.random.seed(seed)
 
 station_coords = np.loadtxt(os.path.join(disp_dir, "sources.dat"),skiprows=1)
 stat_pairs = []
@@ -131,12 +148,11 @@ def forward(state):
     return jacobian @ (1 / interp_vel)
 
 
-n_chains_total = 8
 chains_per_batch = 4
+if n_chains_total % chains_per_batch != 0:
+    raise ValueError(f"--n-chains must be a multiple of {chains_per_batch}")
 n_batches = n_chains_total // chains_per_batch
 
-n_iterations = 50_000
-burnin_iterations = 10_000
 save_every = 200
 
 sum_vel = np.zeros(grid_points.shape[0])
@@ -199,6 +215,11 @@ stat_vstd = np.array(sum_std).mean(axis=0)
 
 print(f"{n_samples_total} total samples accumulated across {n_batches} batches "
       f"({chains_per_batch} chains each)")
+
+if checksum:
+    for name, values in [("inferred_vel", inferred_vel), ("inferred_vel_std", inferred_vel_std),
+                         ("mean_vel", stat_mean), ("medi_vel", stat_medi), ("std_vel", stat_vstd)]:
+        print(f"checksum {name} {np.sum(np.abs(values)):.15e}")
 
 
 

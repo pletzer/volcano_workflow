@@ -24,8 +24,28 @@ first (e.g. `brew install geos proj` on macOS) or use a conda environment instea
 ## Usage
 
 ```bash
-python bin/bayesbay2D.py --data=data --target-period=3.0 --results-dir=results
-python bin/genvizfile.py --results-dir=results --output=velocity.vtr
+python bin/inv2D.py --data=input/1st_step_2D/2.5s/data --target-period=2.5 --results-dir=results
+python bin/genvizfile.py --results-dir=results --output=velocity.vtm
 ```
 
+`genvizfile.py` writes a VTK multiblock file `velocity.vtm` with two blocks: `velocity` (the
+velocity fields on a rectilinear grid) and `coastline` (the coastline clipped to the same domain).
+The blocks themselves are stored in the `velocity/` directory, which must be kept next to
+`velocity.vtm`. Open `velocity.vtm` in ParaView. The coastline data are downloaded from Natural
+Earth by `cartopy` on first use.
+
 Run each script with `--help` for a description of its options.
+
+`inv2D.py` also accepts `--seed=<int>` for reproducible runs, `--checksum` to print checksums of
+the results, and `--n-iterations`, `--burnin-iterations` and `--n-chains` to change the length
+of the Markov chain Monte Carlo run.
+
+## Testing
+
+```bash
+python -m pytest tests
+```
+
+The test runs a short, seeded inversion with `bin/inv2D.py` and checks the printed checksums
+against reference values in `tests/test_inv2D.py`. If a change is expected to modify the results,
+update the reference values there.

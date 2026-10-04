@@ -9,3 +9,5 @@ bayesbay
 joblib
 defopt
 vtk
+shapely
+pytest

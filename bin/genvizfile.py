@@ -3,8 +3,12 @@ import glob
 
 import numpy as np
 import defopt
-from vtkmodules.vtkCommonDataModel import vtkRectilinearGrid
-from vtkmodules.vtkIOXML import vtkXMLRectilinearGridWriter
+import shapely.geometry
+from cartopy.io import shapereader
+from vtkmodules.vtkCommonCore import vtkPoints
+from vtkmodules.vtkCommonDataModel import (vtkRectilinearGrid, vtkPolyData, vtkCellArray,
+                                            vtkMultiBlockDataSet, vtkCompositeDataSet)
+from vtkmodules.vtkIOXML import vtkXMLMultiBlockDataWriter
 from vtkmodules.util.numpy_support import numpy_to_vtk
 
 
@@ -14,13 +18,45 @@ def cell_edges(centres):
     return np.concatenate([centres - 0.5*dx, [centres[-1] + 0.5*dx]])
 
 
+def get_coastline(xmin, xmax, ymin, ymax, resolution="10m"):
+    """Return the Natural Earth coastline clipped to the box as a list of (n, 2) lon-lat arrays."""
+    box = shapely.geometry.box(xmin, ymin, xmax, ymax)
+    path = shapereader.natural_earth(resolution=resolution, category="physical", name="coastline")
+    lines = []
+    for geom in shapereader.Reader(path).geometries():
+        if not geom.intersects(box):
+            continue
+        clipped = geom.intersection(box)
+        parts = getattr(clipped, "geoms", [clipped])
+        lines += [np.array(part.coords) for part in parts
+                  if isinstance(part, shapely.geometry.LineString) and len(part.coords) >= 2]
+    return lines
+
+
+def build_coastline(lines):
+    """Return the coastline segments as VTK polylines in the z = 0 plane."""
+    points = vtkPoints()
+    cells = vtkCellArray()
+    for line in lines:
+        start = points.GetNumberOfPoints()
+        for x, y in line[:, :2]:
+            points.InsertNextPoint(x, y, 0.0)
+        cells.InsertNextCell(len(line), range(start, start + len(line)))
+    polydata = vtkPolyData()
+    polydata.SetPoints(points)
+    polydata.SetLines(cells)
+    return polydata
+
+
 def main(*, results_dir: str, output: str):
     """
-    Convert the bayesbay2D.py results into a VTK rectilinear grid (.vtr) file
-    with the velocity fields stored as cell data.
+    Convert the inv2D.py results into a VTK multiblock (.vtm) file with two blocks:
+    "velocity", a rectilinear grid with the velocity fields stored as cell data, and
+    "coastline", the coastline clipped to the same domain. The blocks are written to
+    files in a directory next to the .vtm file, named after it without the suffix.
 
     :param results_dir: directory containing grid.txt and the *_vel*.txt files
-    :param output: name of the output .vtr file
+    :param output: name of the output .vtm file
     """
     # cell centres (lon, lat), longitude varies fastest
     grid = np.loadtxt(os.path.join(results_dir, "grid.txt"))
@@ -55,15 +91,23 @@ def main(*, results_dir: str, output: str):
         array.SetName(os.path.splitext(os.path.basename(filename))[0])
         rgrid.GetCellData().AddArray(array)
 
-    if not output.endswith(".vtr"):
-        output += ".vtr"
+    coastline = get_coastline(xedges[0], xedges[-1], yedges[0], yedges[-1])
 
-    writer = vtkXMLRectilinearGridWriter()
+    blocks = vtkMultiBlockDataSet()
+    for k, (name, block) in enumerate([("velocity", rgrid), ("coastline", build_coastline(coastline))]):
+        blocks.SetBlock(k, block)
+        blocks.GetMetaData(k).Set(vtkCompositeDataSet.NAME(), name)
+
+    if not output.endswith(".vtm"):
+        output += ".vtm"
+
+    writer = vtkXMLMultiBlockDataWriter()
     writer.SetFileName(output)
-    writer.SetInputData(rgrid)
+    writer.SetInputData(blocks)
     if writer.Write() != 1:
         raise RuntimeError(f"failed to write {output}")
-    print(f"wrote {nx} x {ny} cells, {rgrid.GetCellData().GetNumberOfArrays()} fields to {output}")
+    print(f"wrote {nx} x {ny} cells, {rgrid.GetCellData().GetNumberOfArrays()} fields and "
+          f"{len(coastline)} coastline segments to {output}")
 
 
 if __name__ == '__main__':
