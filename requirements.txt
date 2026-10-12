@@ -6,7 +6,9 @@ cartopy
 tqdm
 seislib
 bayesbay
+disba
 joblib
+disba
 defopt
 vtk
 shapely
