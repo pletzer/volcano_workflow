@@ -109,10 +109,17 @@ voronoi = Voronoi1D(
 )
 parameterization = bb.parameterization.Parameterization(voronoi)
 
+def compute_cell_extents(voronoi_sites):
+    # the extent of the unbounded bottom cell (half-space) should be 0, but some
+    # builds of bayesbay's compiled extension return inf, which yields NaNs downstream
+    thickness = Voronoi1D.compute_cell_extents(voronoi_sites)
+    thickness[~np.isfinite(thickness)] = 0
+    return thickness
+
 def forward_sw(state):
     voronoi = state["voronoi"]
     voronoi_sites = voronoi["discretization"]
-    thickness = Voronoi1D.compute_cell_extents(voronoi_sites)
+    thickness = compute_cell_extents(voronoi_sites)
     vs = voronoi["vs"]
     vp = vs * VP_VS
     rho = 0.32 * vp + 0.77
@@ -154,7 +161,7 @@ for chain in inversion.chains:
 results = inversion.get_results(concatenate_chains=True)
 
 sampled_voronoi_nuclei = results['voronoi.discretization']
-sampled_thickness = [Voronoi1D.compute_cell_extents(n) for n in sampled_voronoi_nuclei]
+sampled_thickness = [compute_cell_extents(n) for n in sampled_voronoi_nuclei]
 sampled_vs = results['voronoi.vs']
 interp_depths = np.linspace(0, 160, 160)
 statistics_vs = Voronoi1D.get_tessellation_statistics(
