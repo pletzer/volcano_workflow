@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import bayesbay as bb
 from bayesbay.discretization import Voronoi1D
 import numpy as np
@@ -11,7 +12,7 @@ import defopt
 def parse_args(*, data: str, results_dir: str,
                checksum: bool = False, seed: int = None,
                n_iterations: int = 50_000, burnin_iterations: int = 10_000,
-               n_chains: int = 8):
+               n_chains: int = 8, periods: list[float] = None):
     """
     Bayesian 1D shear-wave velocity inversion of a Rayleigh-wave group-velocity
     dispersion curve using bayesbay.
@@ -23,13 +24,14 @@ def parse_args(*, data: str, results_dir: str,
     :param n_iterations: number of iterations per Markov chain
     :param burnin_iterations: number of burn-in iterations per Markov chain
     :param n_chains: number of Markov chains
+    :param periods: periods in seconds of the values in disp.disp (default: 2 to 25 s in steps of 0.5 s)
     """
     return (data, results_dir, checksum, seed,
-            n_iterations, burnin_iterations, n_chains)
+            n_iterations, burnin_iterations, n_chains, periods)
 
 
 (disp_dir, results_dir, checksum, seed,
- n_iterations, burnin_iterations, n_chains) = defopt.run(parse_args)
+ n_iterations, burnin_iterations, n_chains, periods) = defopt.run(parse_args)
 os.makedirs(results_dir, exist_ok=True)
 
 # bayesbay draws from the global random and numpy.random generators. When seeded,
@@ -46,7 +48,7 @@ VS = np.array([3.36, 3.75, 4.47])
 VP_VS = 1.77
 VP = VS * VP_VS
 RHO = 0.32 * VP + 0.77
-PERIODS = np.arange(2,25.5,0.5)  #np.geomspace(3, 80, 20)
+PERIODS = np.arange(2,25.5,0.5) if periods is None else np.array(periods)  #np.geomspace(3, 80, 20)
 RAYLEIGH_STD = 0.02
 
 def initialize_vs(param, positions=None):
@@ -65,7 +67,9 @@ vs.set_custom_initialize(initialize_vs)
 #phase_vel = pd(PERIODS, mode=0, wave="rayleigh").velocity
 gd = GroupDispersion(THICKNESS, VP, VS, RHO)
 group_vel = gd(PERIODS, mode=0, wave="rayleigh").velocity
-d_obs = np.loadtxt(os.path.join(disp_dir, "disp.disp")) #phase_vel + np.random.normal(0, RAYLEIGH_STD, phase_vel.size)
+d_obs = np.loadtxt(os.path.join(disp_dir, "disp.disp"), ndmin=1) #phase_vel + np.random.normal(0, RAYLEIGH_STD, phase_vel.size)
+if d_obs.shape != PERIODS.shape:
+    raise ValueError(f"disp.disp has {d_obs.size} values but there are {PERIODS.size} periods")
 
 # For plotting the prior
 depth_prior = np.linspace(0, 200)

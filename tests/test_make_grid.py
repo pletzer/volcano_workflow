@@ -18,15 +18,15 @@ GRID = np.array([[174.0315, -35.6804],
                  [174.0315, -35.7304]])
 
 
-def velocity(period):
+def velocity(period, n_points=GRID.shape[0]):
     # a different, known velocity at each grid point and period
-    return period + 0.1*np.arange(GRID.shape[0])
+    return period + 0.1*np.arange(n_points)
 
 
 def write_results(path, period, grid=GRID):
     path.mkdir(parents=True)
     np.savetxt(path / "grid.txt", grid)
-    np.savetxt(path / "inferred_vel.txt", velocity(period))
+    np.savetxt(path / "inferred_vel.txt", velocity(period, grid.shape[0]))
     return path
 
 
@@ -78,3 +78,13 @@ def test_different_grids(data_dirs, tmp_path):
     proc = run_make_grid(data_dirs + [other], PERIODS + [3.5], tmp_path / "grid")
     assert proc.returncode != 0
     assert "grid.txt" in proc.stderr
+
+
+def test_rounded_directory_names(tmp_path):
+    # floating point noise in grid.txt must not appear in the directory names
+    grid = np.array([[174.25650000000002, -35.7554], [174.85649999999998, -35.7554]])
+    data = write_results(tmp_path / "2.5s", 2.5, grid=grid)
+    results_dir = tmp_path / "grid"
+    proc = run_make_grid([data], [2.5], results_dir)
+    assert proc.returncode == 0, proc.stderr
+    assert sorted(p.name for p in results_dir.iterdir()) == ["174.2565--35.7554", "174.8565--35.7554"]

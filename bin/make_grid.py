@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import os
 
 import numpy as np
@@ -39,8 +40,9 @@ def main(*, data: list[str], periods: list[float], results_dir: str):
         vel[:, j] = vel_j
 
     for i in range(N):
-        lon = grid_coords[i,0]
-        lat = grid_coords[i,1]
+        # round to remove floating point noise from the directory names, e.g. 174.25650000000002
+        lon = round(float(grid_coords[i,0]), 6)
+        lat = round(float(grid_coords[i,1]), 6)
         to_dir = os.path.join(results_dir, str(lon)+'-'+str(lat))
         os.makedirs(to_dir, exist_ok=True)
         np.savetxt(os.path.join(to_dir, 'disp.disp'), vel[i, :])

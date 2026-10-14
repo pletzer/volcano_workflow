@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import numpy as np
 import matplotlib.pyplot as plt
 import scipy
@@ -27,7 +28,7 @@ import defopt
 def parse_args(*, data: str, target_period: float, results_dir: str,
                checksum: bool = False, seed: int = None,
                n_iterations: int = 50_000, burnin_iterations: int = 10_000,
-               n_chains: int = 8):
+               n_chains: int = 8, cell_size: float = 0.05):
     """
     Bayesian 2D Rayleigh-wave velocity inversion using bayesbay.
 
@@ -39,13 +40,14 @@ def parse_args(*, data: str, target_period: float, results_dir: str,
     :param n_iterations: number of iterations per Markov chain
     :param burnin_iterations: number of burn-in iterations per Markov chain
     :param n_chains: total number of Markov chains, must be a multiple of 4
+    :param cell_size: size of the grid cells in degrees
     """
     return (data, target_period, results_dir, checksum, seed,
-            n_iterations, burnin_iterations, n_chains)
+            n_iterations, burnin_iterations, n_chains, cell_size)
 
 
 (disp_dir, target_period, results_dir, checksum, seed,
- n_iterations, burnin_iterations, n_chains_total) = defopt.run(parse_args)
+ n_iterations, burnin_iterations, n_chains_total, cell_size) = defopt.run(parse_args)
 os.makedirs(results_dir, exist_ok=True)
 
 # bayesbay draws from the global random and numpy.random generators. The chains
@@ -99,7 +101,6 @@ def resolve_station(code, coords_lookup):
 
 
 pad = 0.1
-cell_size = 0.05
 
 lats = station_coords[:,1] #[station_coords[s][0] for s in used_stations]
 lons = station_coords[:,0] #[station_coords[s][1] for s in used_stations]

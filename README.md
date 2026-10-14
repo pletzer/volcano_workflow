@@ -51,6 +51,9 @@ Run each script with `--help` for a description of its options.
 `inv2D.py` also accepts `--seed=<int>` for reproducible runs, `--checksum` to print checksums of
 the results, and `--n-iterations`, `--burnin-iterations` and `--n-chains` to change the length
 of the Markov chain Monte Carlo run.
+`inv2D.py` takes `--cell-size` to set the grid resolution in degrees (default 0.05), and
+`inv1D.py` takes `--periods` to give the periods of the values in `disp.disp` (default 2 to 25 s
+in steps of 0.5 s).
 
 ## Testing the scripts
 
@@ -62,3 +65,42 @@ python -m pytest tests
 and `bin/inv1D.py` and check the printed checksums against reference values in the test files. If
 a change is expected to modify the results, update the reference values there.
 `tests/test_make_grid.py` checks `bin/make_grid.py` on small synthetic data.
+
+## Running the workflow
+
+The workflow in `main.nf` chains the scripts with [Nextflow](https://www.nextflow.io/):
+
+1. `INV2D` runs `inv2D.py` for each period in `input/1st_step_2D/<period>s/data/`,
+2. `MAKE_GRID` runs `make_grid.py` to gather the 2D results into one dispersion curve per grid
+   point,
+3. `INV1D` runs `inv1D.py` on batches of grid points.
+
+The parameters and profiles are defined in `nextflow.config`. Each task loads the Python module
+and activates `venv/` itself, so only Nextflow needs to be loaded.
+
+### Quick test run
+
+The `test` profile runs the whole workflow on the current node with 2 periods (2.5 and 5.0 s), a
+coarse 0.3 degree grid (56 grid points) and short Markov chains. It takes about 6 minutes using
+4 cores:
+
+```bash
+module load Nextflow/26.04.0
+nextflow run main.nf -profile test
+```
+
+The results are written to `output/`:
+
+- `output/2D/<period>s/`: the 2D velocity maps of each period,
+- `output/1D/<lon>-<lat>/`: the dispersion curve (`disp.disp`) and 1D inversion results of each
+  grid point.
+
+The intermediate files of each task are kept in `workdir/`. Add `-resume` to rerun only the tasks
+whose inputs or parameters have changed. Any parameter can be overridden on the command line,
+e.g.
+
+```bash
+nextflow run main.nf -profile test -resume --periods=2.5 --cell_size=0.25
+```
+
+Delete `workdir/`, `output/` and `.nextflow*` to start from scratch.
