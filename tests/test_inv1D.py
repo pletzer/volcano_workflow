@@ -1,9 +1,9 @@
 """
-Regression test for bin/1D_inv.py: run a short, seeded inversion and compare the
+Regression test for bin/inv1D.py: run a short, seeded inversion and compare the
 checksums of the results against reference values.
 
 If a change to the code is expected to modify the results, rerun the command in
-run_1D_inv with the same options and update REFERENCE_CHECKSUMS.
+run_inv1D with the same options and update REFERENCE_CHECKSUMS.
 """
 import subprocess
 import sys
@@ -26,9 +26,9 @@ OUTPUT_FILES = ["fig1.pdf", "fig2.pdf", "mean.txt", "medi.txt", "dpth.txt"]
 
 
 @pytest.fixture(scope="module")
-def run_1D_inv(tmp_path_factory):
+def run_inv1D(tmp_path_factory):
     results_dir = tmp_path_factory.mktemp("results")
-    cmd = [sys.executable, str(ROOT / "bin" / "1D_inv.py"),
+    cmd = [sys.executable, str(ROOT / "bin" / "inv1D.py"),
            f"--data={DATA}", f"--results-dir={results_dir}",
            "--checksum", "--seed=1234",
            "--n-iterations=2000", "--burnin-iterations=500", "--n-chains=4"]
@@ -43,21 +43,21 @@ def run_1D_inv(tmp_path_factory):
     return results_dir, checksums
 
 
-def test_output_files(run_1D_inv):
-    results_dir, _ = run_1D_inv
+def test_output_files(run_inv1D):
+    results_dir, _ = run_inv1D
     for name in OUTPUT_FILES:
         assert (results_dir / name).is_file(), f"{name} was not written"
 
 
 @pytest.mark.parametrize("name", sorted(REFERENCE_CHECKSUMS))
-def test_checksum(run_1D_inv, name):
-    _, checksums = run_1D_inv
+def test_checksum(run_inv1D, name):
+    _, checksums = run_inv1D
     assert name in checksums, f"no checksum printed for {name}"
     assert checksums[name] == pytest.approx(REFERENCE_CHECKSUMS[name], rel=1e-10)
 
 
-def test_checksum_matches_saved_file(run_1D_inv):
+def test_checksum_matches_saved_file(run_inv1D):
     # the printed checksum must describe what was written to disk
-    results_dir, checksums = run_1D_inv
+    results_dir, checksums = run_inv1D
     values = np.loadtxt(results_dir / "mean.txt")
     assert np.sum(np.abs(values)) == pytest.approx(checksums["mean"], rel=1e-12)
