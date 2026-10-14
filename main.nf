@@ -14,8 +14,10 @@ process INV2D {
     input:
     tuple val(period), path(data)
 
+    // output the individual files rather than the directory: on -resume, publishDir skips
+    // existing targets, so a file deleted from an existing output directory would not be restored
     output:
-    tuple val(period), path("${period}s")
+    tuple val(period), path("${period}s/*")
 
     script:
     def seed = params.seed != null ? "--seed=${params.seed}" : ''
@@ -50,8 +52,9 @@ process INV1D {
     path points
     val periods
 
+    // individual files rather than directories, see INV2D
     output:
-    path "1D/*", type: 'dir'
+    path "1D/*/*"
 
     script:
     def seed = params.seed != null ? "--seed=${params.seed}" : ''
@@ -74,7 +77,8 @@ workflow {
         .map { dir -> tuple(dir.name.replaceAll(/s$/, ''), dir.resolve('data')) }
         .filter { period, _data -> selected == null || (period.toFloat() in selected) }
 
-    def results_2d = INV2D(inputs)
+    // recover the results directory of each period from its files
+    def results_2d = INV2D(inputs).map { period, files -> tuple(period, [files].flatten()[0].parent) }
 
     // sort by period so that the gathered dispersion curves are in a fixed order
     def gathered = results_2d.toSortedList { a, b -> a[0].toFloat() <=> b[0].toFloat() }
