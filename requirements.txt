@@ -6,7 +6,7 @@ cartopy
 tqdm
 seislib
 bayesbay
-disba
+disba>=0.7
 joblib
 defopt
 vtk
