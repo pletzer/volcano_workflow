@@ -104,3 +104,23 @@ nextflow run main.nf -profile test -resume --periods=2.5 --cell_size=0.25
 ```
 
 Delete `workdir/`, `output/` and `.nextflow*` to start from scratch.
+
+### Input, output and work directories
+
+By default, the workflow reads the data from `input/1st_step_2D/` in this repository and writes
+`output/` and `workdir/` in the directory where `nextflow` is launched. To use other directories:
+
+```bash
+nextflow run main.nf -profile test \
+    --input=/path/to/1st_step_2D \
+    --outdir=/path/to/output \
+    -w /path/to/workdir
+```
+
+- `--input`: directory containing one `<period>s/data/` subdirectory per period,
+- `--outdir`: directory where the results are published,
+- `-w` (one dash, a Nextflow option): directory where the tasks run and keep their intermediate
+  files. Use the same `-w` with `-resume`, since the cached tasks are looked up there. On Mahuika,
+  put it on `/nesi/nobackup`.
+
+Relative paths are resolved from the directory where `nextflow` is launched.
