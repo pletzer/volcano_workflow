@@ -14,6 +14,8 @@ pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
+## Environment
+
 Activate the environment with `source venv/bin/activate` in each new shell before running the
 scripts, and type `deactivate` to leave it.
 
@@ -31,7 +33,7 @@ Note: `seislib` builds C extensions on installation and may require a C compiler
 depends on the GEOS and PROJ libraries; if `pip` fails to install it, install these libraries
 first (e.g. `brew install geos proj` on macOS) or use a conda environment instead.
 
-## Usage
+## Script usage
 
 ```bash
 python bin/inv2D.py --data=input/1st_step_2D/2.5s/data --target-period=2.5 --results-dir=results
@@ -50,7 +52,7 @@ Run each script with `--help` for a description of its options.
 the results, and `--n-iterations`, `--burnin-iterations` and `--n-chains` to change the length
 of the Markov chain Monte Carlo run.
 
-## Testing
+## Testing the scripts
 
 ```bash
 python -m pytest tests
