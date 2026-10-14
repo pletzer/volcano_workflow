@@ -124,3 +124,41 @@ nextflow run main.nf -profile test \
   put it on `/nesi/nobackup`.
 
 Relative paths are resolved from the directory where `nextflow` is launched.
+
+### Running on Mahuika with Slurm
+
+The `mahuika` profile submits each task as its own Slurm job, with the resources set in
+`nextflow.config` (`inv2d_memory`, `inv2d_time`, `inv1d_memory`, `inv1d_time`; `INV1D` requests one
+core per chain unless `--seed` is given). Tasks killed for running out of memory or time are
+resubmitted up to twice, with the memory and time multiplied by the attempt number.
+
+The Nextflow head process must keep running until all the tasks have completed, so run it as a
+Slurm job too, from the top directory of this repository:
+
+```bash
+sbatch --account=<project> submit_mahuika.sl --account=<project>
+```
+
+The first `--account` is for the head job, the second (passed to Nextflow) for the task jobs; leave
+them out to use your default Slurm account. Arguments after `submit_mahuika.sl` are passed to
+`nextflow run`, e.g. `--outdir=...` or `-w ...`. The head job runs with `-resume`, so if it runs
+out of time, submit it again to continue where it stopped. The log of the head job is written to
+`slurm-<jobid>.out`.
+
+For a quick check of the Slurm setup, combine the `mahuika` profile with the `test` profile (about
+5 minutes):
+
+```bash
+PROFILE=test,mahuika sbatch --account=<project> --time=01:00:00 submit_mahuika.sl --account=<project>
+```
+
+### Workflow diagram
+
+To draw the graph of the processes without running them:
+
+```bash
+nextflow run main.nf -profile test -preview -with-dag dag.html
+```
+
+The format follows the extension: `.html` and `.mmd` (Mermaid), or `.png`, `.svg` and `.pdf`, which
+require Graphviz (`dot`).
