@@ -30,6 +30,29 @@ process INV2D {
     """
 }
 
+process TOMO2D {
+    tag "${period}s"
+    publishDir "${params.outdir}/2D_tomo", mode: 'copy'
+
+    input:
+    tuple val(period), path(data)
+
+    output:
+    tuple val(period), path("${period}s/*")
+
+    script:
+    def seed = params.seed != null ? "-S ${params.seed}" : ''
+    """
+    mkdir -p ${period}s
+    mpiexec -n ${task.cpus} ${params.tomo_mpi_exec} \\
+        -s ${data}/sources.dat -r ${data}/receivers.dat \\
+        -o ${data}/observed_t.dat -R ${data}/pathfile.dat \\
+        -p ${period}s/ -b ${params.tomo_burnin} -t ${params.tomo_total} ${seed}
+    #tomo2grid.py --results-dir=${period}s
+    """
+}
+
+
 process MAKE_GRID {
     input:
     val periods
@@ -79,6 +102,7 @@ workflow {
 
     // recover the results directory of each period from its files
     def results_2d = INV2D(inputs).map { period, files -> tuple(period, [files].flatten()[0].parent) }
+    TOMO2D(inputs) // run the tomography inversion in parallel with the 2D inversion
 
     // sort by period so that the gathered dispersion curves are in a fixed order
     def gathered = results_2d.toSortedList { a, b -> a[0].toFloat() <=> b[0].toFloat() }
