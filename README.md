@@ -124,3 +124,41 @@ nextflow run main.nf -profile test \
   put it on `/nesi/nobackup`.
 
 Relative paths are resolved from the directory where `nextflow` is launched.
+
+## Ho to add tomo_mpi
+
+Currently, the workflow does not run the `tomo_mpi` step. However, it can be added by following these steps:
+
+1. Write the process. Add this section in `main.nf`.
+```
+process TOMO2D {
+    tag "${period}s"
+    publishDir "${params.outdir}/2D_tomo", mode: 'copy'
+
+    input:
+    tuple val(period), path(data)
+
+    output:
+    tuple val(period), path("${period}s/*")
+
+    script:
+    def seed = params.seed != null ? "-S ${params.seed}" : ''
+    """
+    mkdir -p ${period}s
+    mpiexec -n ${task.cpus} tomo_mpi  \\
+        -s ${data}/sources.dat -r ${data}/receivers.dat \\
+        -o ${data}/observed_t.dat -R ${data}/pathfile.dat \\
+        -p ${period}s/ -b ${params.tomo_burnin} -t ${params.tomo_total} ${seed}
+    tomo2grid.py --results-dir=${period}s
+    """
+}
+```
+2. Create a workflow entry. In `main.nf`, add the line
+```
+   TOMO2D(input)
+```
+below the line
+```
+def results_2d = INV2D(inputs).map { period, files -> tuple(period, [files].flatten()[0].parent) }
+```
+
