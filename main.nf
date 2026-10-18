@@ -65,7 +65,6 @@ process INV1D {
             --n-iterations=${params.inv1d_n_iterations} \\
             --burnin-iterations=${params.inv1d_burnin_iterations} \\
             --n-chains=${params.inv1d_n_chains}
-        cp \$point/disp.disp 1D/\$point/
     done
     """
 }
