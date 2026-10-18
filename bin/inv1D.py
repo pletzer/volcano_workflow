@@ -5,11 +5,15 @@ import numpy as np
 import matplotlib.pyplot as plt
 from disba import PhaseDispersion, GroupDispersion
 import os
+import sys
 import random
+import itertools
+from concurrent.futures import ProcessPoolExecutor
 import defopt
 
 
 def parse_args(*, data: str, results_dir: str,
+               lons: str = None, lats: str = None, n_workers: int = None,
                checksum: bool = False, seed: int = None,
                n_iterations: int = 50_000, burnin_iterations: int = 10_000,
                n_chains: int = 8, periods: list[float] = None):
@@ -17,8 +21,15 @@ def parse_args(*, data: str, results_dir: str,
     Bayesian 1D shear-wave velocity inversion of a Rayleigh-wave group-velocity
     dispersion curve using bayesbay.
 
-    :param data: directory containing disp.disp
-    :param results_dir: directory where the results are written
+    :param data: directory containing disp.disp, or with --lons and --lats, directory
+        containing one <lon>-<lat>/disp.disp per grid point (as written by make_grid.py)
+    :param results_dir: directory where the results are written, with --lons and --lats
+        in one <lon>-<lat> subdirectory per grid point
+    :param lons: comma-separated longitudes, the inversion is run for every
+        combination of these with --lats
+    :param lats: comma-separated latitudes
+    :param n_workers: number of grid points inverted at the same time (default: as
+        many as the available cores allow, one core per chain unless --seed is given)
     :param checksum: print checksums of the results (use with --seed for reproducible values)
     :param seed: seed of the random number generators, for reproducible runs
     :param n_iterations: number of iterations per Markov chain
@@ -26,19 +37,9 @@ def parse_args(*, data: str, results_dir: str,
     :param n_chains: number of Markov chains
     :param periods: periods in seconds of the values in disp.disp (default: 2 to 25 s in steps of 0.5 s)
     """
-    return (data, results_dir, checksum, seed,
+    return (data, results_dir, lons, lats, n_workers, checksum, seed,
             n_iterations, burnin_iterations, n_chains, periods)
 
-
-(disp_dir, results_dir, checksum, seed,
- n_iterations, burnin_iterations, n_chains, periods) = defopt.run(parse_args)
-os.makedirs(results_dir, exist_ok=True)
-
-# bayesbay draws from the global random and numpy.random generators. When seeded,
-# the chains run in this process (n_jobs=1) so that the results are reproducible
-if seed is not None:
-    random.seed(seed)
-    np.random.seed(seed)
 
 #THICKNESS = np.array([10, 10, 15, 20, 20, 20, 20, 20, 0])
 #VS = np.array([3.38, 3.44, 3.66, 4.25, 4.35, 4.32, 4.315, 4.38, 4.5])
@@ -48,165 +49,250 @@ VS = np.array([3.36, 3.75, 4.47])
 VP_VS = 1.77
 VP = VS * VP_VS
 RHO = 0.32 * VP + 0.77
-PERIODS = np.arange(2,25.5,0.5) if periods is None else np.array(periods)  #np.geomspace(3, 80, 20)
 RAYLEIGH_STD = 0.02
 
-def initialize_vs(param, positions=None):
-    vmin, vmax = param.get_vmin_vmax(positions)
-    sorted_vals = np.sort(np.random.uniform(vmin, vmax, positions.size))
-    return sorted_vals
+def run_point(disp_dir, results_dir, *, checksum, seed, n_iterations, burnin_iterations,
+              n_chains, periods, label=None):
+    """
+    Invert the dispersion curve disp_dir/disp.disp and write the results to results_dir.
+    label prefixes the printed checksums, to tell the grid points apart.
+    """
+    os.makedirs(results_dir, exist_ok=True)
 
-vs = bb.prior.UniformPrior(name="vs", 
-                                    vmin=[2, 2, 2], 
-                                    vmax=[5, 5, 5], 
-                                    position=[0, 20, 60],
-                                    perturb_std=0.15)
-vs.set_custom_initialize(initialize_vs)
+    # bayesbay draws from the global random and numpy.random generators. When seeded,
+    # the chains run in this process (n_jobs=1) so that the results are reproducible.
+    # Seeding here, for each grid point, makes the results independent of which
+    # worker inverts which point, and in which order
+    if seed is not None:
+        random.seed(seed)
+        np.random.seed(seed)
 
-#pd = PhaseDispersion(THICKNESS, VP, VS, RHO)
-#phase_vel = pd(PERIODS, mode=0, wave="rayleigh").velocity
-gd = GroupDispersion(THICKNESS, VP, VS, RHO)
-group_vel = gd(PERIODS, mode=0, wave="rayleigh").velocity
-d_obs = np.loadtxt(os.path.join(disp_dir, "disp.disp"), ndmin=1) #phase_vel + np.random.normal(0, RAYLEIGH_STD, phase_vel.size)
-if d_obs.shape != PERIODS.shape:
-    raise ValueError(f"disp.disp has {d_obs.size} values but there are {PERIODS.size} periods")
+    PERIODS = np.arange(2,25.5,0.5) if periods is None else np.array(periods)  #np.geomspace(3, 80, 20)
 
-# For plotting the prior
-depth_prior = np.linspace(0, 200)
-vmin_prior, vmax_prior = vs.get_vmin_vmax(depth_prior)
+    # The functions passed to bayesbay are defined here rather than at module level:
+    # without --seed, bayesbay sends them to its own worker processes, which cannot
+    # import them from this script when it runs in a worker of the grid point pool
+    def initialize_vs(param, positions=None):
+        vmin, vmax = param.get_vmin_vmax(positions)
+        sorted_vals = np.sort(np.random.uniform(vmin, vmax, positions.size))
+        return sorted_vals
 
-fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(9, 4), gridspec_kw={'width_ratios': [1, 2.5]})
-ax1.fill_betweenx(depth_prior, vmin_prior, vmax_prior, alpha=0.2, label='Prior')
-Voronoi1D.plot_tessellation(THICKNESS, 
-                            VS, 
-                            label='True Vs', 
-                            ax=ax1, 
-                            color='k', 
-                            lw=2, 
-                            input_type='extents')
-ax1.set_xlabel('Vs [km/s]')
-ax1.set_ylabel('Depth [km]')
-ax1.set_ylim(np.cumsum(THICKNESS)[-1] + max(THICKNESS), 0)
-ax1.grid()
-ax1.legend()
+    def compute_cell_extents(voronoi_sites):
+        # the extent of the unbounded bottom cell (half-space) should be 0, but some
+        # builds of bayesbay's compiled extension return inf, which yields NaNs downstream
+        thickness = Voronoi1D.compute_cell_extents(voronoi_sites)
+        thickness[~np.isfinite(thickness)] = 0
+        return thickness
 
-ax2.plot(PERIODS, group_vel, 'r--', label='Rayleigh (true Vs)', lw=0.5)
-ax2.plot(PERIODS, d_obs, 'ro', label='Rayleigh obs.')
-ax2.set_xlabel('Period [s]')
-ax2.set_ylabel('Group velocity [km/s]')
-ax2.grid()
-ax2.legend()
+    vs = bb.prior.UniformPrior(name="vs", 
+                                        vmin=[2, 2, 2], 
+                                        vmax=[5, 5, 5], 
+                                        position=[0, 20, 60],
+                                        perturb_std=0.15)
+    vs.set_custom_initialize(initialize_vs)
 
-plt.tight_layout(w_pad=2)
-plt.savefig(os.path.join(results_dir, "fig1.pdf"))
+    #pd = PhaseDispersion(THICKNESS, VP, VS, RHO)
+    #phase_vel = pd(PERIODS, mode=0, wave="rayleigh").velocity
+    gd = GroupDispersion(THICKNESS, VP, VS, RHO)
+    group_vel = gd(PERIODS, mode=0, wave="rayleigh").velocity
+    d_obs = np.loadtxt(os.path.join(disp_dir, "disp.disp"), ndmin=1) #phase_vel + np.random.normal(0, RAYLEIGH_STD, phase_vel.size)
+    if d_obs.shape != PERIODS.shape:
+        raise ValueError(f"{disp_dir}/disp.disp has {d_obs.size} values but there are {PERIODS.size} periods")
 
-voronoi = Voronoi1D(
-    name="voronoi", 
-    vmin=0,
-    vmax=150,
-    perturb_std=10,
-    n_dimensions=None, 
-    n_dimensions_min=4,
-    n_dimensions_max=15,
-    parameters=[vs], 
-    birth_from='neighbour'
-)
-parameterization = bb.parameterization.Parameterization(voronoi)
+    # For plotting the prior
+    depth_prior = np.linspace(0, 200)
+    vmin_prior, vmax_prior = vs.get_vmin_vmax(depth_prior)
 
-def compute_cell_extents(voronoi_sites):
-    # the extent of the unbounded bottom cell (half-space) should be 0, but some
-    # builds of bayesbay's compiled extension return inf, which yields NaNs downstream
-    thickness = Voronoi1D.compute_cell_extents(voronoi_sites)
-    thickness[~np.isfinite(thickness)] = 0
-    return thickness
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(9, 4), gridspec_kw={'width_ratios': [1, 2.5]})
+    ax1.fill_betweenx(depth_prior, vmin_prior, vmax_prior, alpha=0.2, label='Prior')
+    Voronoi1D.plot_tessellation(THICKNESS, 
+                                VS, 
+                                label='True Vs', 
+                                ax=ax1, 
+                                color='k', 
+                                lw=2, 
+                                input_type='extents')
+    ax1.set_xlabel('Vs [km/s]')
+    ax1.set_ylabel('Depth [km]')
+    ax1.set_ylim(np.cumsum(THICKNESS)[-1] + max(THICKNESS), 0)
+    ax1.grid()
+    ax1.legend()
 
-def forward_sw(state):
-    voronoi = state["voronoi"]
-    voronoi_sites = voronoi["discretization"]
-    thickness = compute_cell_extents(voronoi_sites)
-    vs = voronoi["vs"]
-    vp = vs * VP_VS
-    rho = 0.32 * vp + 0.77
-    #pd = PhaseDispersion(thickness, vp, vs, rho)
-    gd = GroupDispersion(thickness, vp, vs, rho)
-    d_pred = gd(PERIODS, mode=0, wave="rayleigh").velocity
-    if len(d_pred) != len(PERIODS):
-        return np.full(PERIODS.shape, np.nan)
-    return d_pred
+    ax2.plot(PERIODS, group_vel, 'r--', label='Rayleigh (true Vs)', lw=0.5)
+    ax2.plot(PERIODS, d_obs, 'ro', label='Rayleigh obs.')
+    ax2.set_xlabel('Period [s]')
+    ax2.set_ylabel('Group velocity [km/s]')
+    ax2.grid()
+    ax2.legend()
 
-target = bb.likelihood.Target("rayleigh", 
-                   d_obs, 
-                   std_min=0.001, 
-                   std_max=0.2, 
-                   std_perturb_std=0.002)
+    plt.tight_layout(w_pad=2)
+    plt.savefig(os.path.join(results_dir, "fig1.pdf"))
+    plt.close(fig)
 
-log_likelihood = bb.likelihood.LogLikelihood(targets=target, fwd_functions=forward_sw)
+    voronoi = Voronoi1D(
+        name="voronoi", 
+        vmin=0,
+        vmax=150,
+        perturb_std=10,
+        n_dimensions=None, 
+        n_dimensions_min=4,
+        n_dimensions_max=15,
+        parameters=[vs], 
+        birth_from='neighbour'
+    )
+    parameterization = bb.parameterization.Parameterization(voronoi)
 
-inversion = bb.BayesianInversion(
-    parameterization=parameterization, 
-    log_likelihood=log_likelihood,
-    n_chains=n_chains
-)
+    def forward_sw(state):
+        voronoi = state["voronoi"]
+        voronoi_sites = voronoi["discretization"]
+        thickness = compute_cell_extents(voronoi_sites)
+        vs = voronoi["vs"]
+        vp = vs * VP_VS
+        rho = 0.32 * vp + 0.77
+        #pd = PhaseDispersion(thickness, vp, vs, rho)
+        gd = GroupDispersion(thickness, vp, vs, rho)
+        d_pred = gd(PERIODS, mode=0, wave="rayleigh").velocity
+        if len(d_pred) != len(PERIODS):
+            return np.full(PERIODS.shape, np.nan)
+        return d_pred
 
-print(np.shape(target.dobs))
+    target = bb.likelihood.Target("rayleigh", 
+                       d_obs, 
+                       std_min=0.001, 
+                       std_max=0.2, 
+                       std_perturb_std=0.002)
 
-inversion.run(
-    sampler=None, 
-    n_iterations=n_iterations, 
-    burnin_iterations=burnin_iterations, 
-    save_every=150,
-    verbose=False,
-    **({"parallel_config": {"n_jobs": 1}} if seed is not None else {}),
-)
+    log_likelihood = bb.likelihood.LogLikelihood(targets=target, fwd_functions=forward_sw)
 
-for chain in inversion.chains:
-    chain.print_statistics()
-
-results = inversion.get_results(concatenate_chains=True)
-
-sampled_voronoi_nuclei = results['voronoi.discretization']
-sampled_thickness = [compute_cell_extents(n) for n in sampled_voronoi_nuclei]
-sampled_vs = results['voronoi.vs']
-interp_depths = np.linspace(0, 160, 160)
-statistics_vs = Voronoi1D.get_tessellation_statistics(
-    sampled_thickness, sampled_vs, interp_depths, input_type='extents'
+    inversion = bb.BayesianInversion(
+        parameterization=parameterization, 
+        log_likelihood=log_likelihood,
+        n_chains=n_chains
     )
 
-fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(6, 8), gridspec_kw={'width_ratios': [2.5, 1]})
-ax1, cbar = Voronoi1D.plot_tessellation_density(sampled_thickness, 
-                                                sampled_vs, 
-                                                input_type='extents', 
-                                                ax=ax1, 
-                                                cmap='binary', 
-                                                vmin=0, 
-                                                vmax=2000)
-Voronoi1D.plot_tessellation(THICKNESS, 
-                            VS, 
-                            ax=ax1, 
-                            color='yellow', 
-                            lw=3, 
-                            label='True Vs',
-                            input_type='extents')
-ax1.plot(statistics_vs['mean'], interp_depths, 'b', lw=2, label='Vs Ensemble Mean')
-ax1.plot(statistics_vs['median'], interp_depths, 'r', lw=2, label='Vs Ensemble Median')
-ax1.set_xlabel("Vs [km/s]")
-ax1.set_ylabel("Depth [km]")
-ax1.legend()
+    print(np.shape(target.dobs))
 
-Voronoi1D.plot_interface_hist(sampled_voronoi_nuclei, bins=75, ec='w', ax=ax2)
-ax2.tick_params(labelleft=False)
-ax2.set_ylabel('')
-ax2.set_ylim(*ax1.get_ylim())
-plt.tight_layout()
-plt.savefig(os.path.join(results_dir, "fig2.pdf"))
+    inversion.run(
+        sampler=None, 
+        n_iterations=n_iterations, 
+        burnin_iterations=burnin_iterations, 
+        save_every=150,
+        verbose=False,
+        **({"parallel_config": {"n_jobs": 1}} if seed is not None else {}),
+    )
 
-if checksum:
-    for name, values in [("mean", statistics_vs['mean']), ("medi", statistics_vs['median'])]:
-        print(f"checksum {name} {np.sum(np.abs(values)):.15e}")
+    for chain in inversion.chains:
+        chain.print_statistics()
 
-np.savetxt(os.path.join(results_dir, "mean.txt"), np.array(statistics_vs['mean']))
-np.savetxt(os.path.join(results_dir, "medi.txt"), np.array(statistics_vs['median']))
-np.savetxt(os.path.join(results_dir, "dpth.txt"), np.array(interp_depths))
+    results = inversion.get_results(concatenate_chains=True)
+
+    sampled_voronoi_nuclei = results['voronoi.discretization']
+    sampled_thickness = [compute_cell_extents(n) for n in sampled_voronoi_nuclei]
+    sampled_vs = results['voronoi.vs']
+    interp_depths = np.linspace(0, 160, 160)
+    statistics_vs = Voronoi1D.get_tessellation_statistics(
+        sampled_thickness, sampled_vs, interp_depths, input_type='extents'
+        )
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(6, 8), gridspec_kw={'width_ratios': [2.5, 1]})
+    ax1, cbar = Voronoi1D.plot_tessellation_density(sampled_thickness, 
+                                                    sampled_vs, 
+                                                    input_type='extents', 
+                                                    ax=ax1, 
+                                                    cmap='binary', 
+                                                    vmin=0, 
+                                                    vmax=2000)
+    Voronoi1D.plot_tessellation(THICKNESS, 
+                                VS, 
+                                ax=ax1, 
+                                color='yellow', 
+                                lw=3, 
+                                label='True Vs',
+                                input_type='extents')
+    ax1.plot(statistics_vs['mean'], interp_depths, 'b', lw=2, label='Vs Ensemble Mean')
+    ax1.plot(statistics_vs['median'], interp_depths, 'r', lw=2, label='Vs Ensemble Median')
+    ax1.set_xlabel("Vs [km/s]")
+    ax1.set_ylabel("Depth [km]")
+    ax1.legend()
+
+    Voronoi1D.plot_interface_hist(sampled_voronoi_nuclei, bins=75, ec='w', ax=ax2)
+    ax2.tick_params(labelleft=False)
+    ax2.set_ylabel('')
+    ax2.set_ylim(*ax1.get_ylim())
+    plt.tight_layout()
+    plt.savefig(os.path.join(results_dir, "fig2.pdf"))
+    plt.close(fig)
+
+    if checksum:
+        prefix = "checksum " if label is None else f"checksum {label} "
+        for name, values in [("mean", statistics_vs['mean']), ("medi", statistics_vs['median'])]:
+            print(f"{prefix}{name} {np.sum(np.abs(values)):.15e}")
+
+    np.savetxt(os.path.join(results_dir, "mean.txt"), np.array(statistics_vs['mean']))
+    np.savetxt(os.path.join(results_dir, "medi.txt"), np.array(statistics_vs['median']))
+    np.savetxt(os.path.join(results_dir, "dpth.txt"), np.array(interp_depths))
+
+
+def grid_points(grid_dir, lons, lats):
+    """
+    Names of the <lon>-<lat> directories in grid_dir for all the combinations of the
+    comma-separated lons and lats, named as in make_grid.py
+    """
+    names = [f"{lon}-{lat}" for lon, lat in itertools.product(
+        [float(lon) for lon in lons.split(',')], [float(lat) for lat in lats.split(',')])]
+    missing = [name for name in names if not os.path.isfile(os.path.join(grid_dir, name, "disp.disp"))]
+    if missing:
+        raise ValueError(f"no disp.disp in {grid_dir} for {len(missing)} of the {len(names)} "
+                         f"grid points: {', '.join(missing)}")
+    return names
+
+
+def available_cores():
+    # sched_getaffinity respects the cores allocated by Slurm, but is not available on macOS
+    return len(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else os.cpu_count()
+
+
+def main():
+    (data, results_dir, lons, lats, n_workers, checksum, seed,
+     n_iterations, burnin_iterations, n_chains, periods) = defopt.run(parse_args)
+    options = dict(checksum=checksum, seed=seed, n_iterations=n_iterations,
+                   burnin_iterations=burnin_iterations, n_chains=n_chains, periods=periods)
+
+    if lons is None and lats is None:
+        run_point(data, results_dir, **options)
+        return
+    if lons is None or lats is None:
+        sys.exit("--lons and --lats must be given together")
+
+    names = grid_points(data, lons, lats)
+    if n_workers is None:
+        cores_per_point = 1 if seed is not None else n_chains
+        n_workers = max(1, min(len(names), available_cores() // cores_per_point))
+    print(f"inverting {len(names)} grid points, {n_workers} at a time")
+
+    if n_workers == 1:
+        for name in names:
+            run_point(os.path.join(data, name), os.path.join(results_dir, name), label=name, **options)
+        return
+
+    with ProcessPoolExecutor(max_workers=n_workers) as pool:
+        futures = {name: pool.submit(run_point, os.path.join(data, name),
+                                     os.path.join(results_dir, name), label=name, **options)
+                   for name in names}
+        failed = []
+        for name, future in futures.items():
+            try:
+                future.result()
+            except Exception as error:
+                failed.append(name)
+                print(f"{name} failed: {error!r}", file=sys.stderr)
+    if failed:
+        sys.exit(f"{len(failed)} of {len(names)} grid points failed: {', '.join(failed)}")
+
+
+if __name__ == "__main__":
+    main()
+
 
 #d_pred = np.array(results['rayleigh.dpred'])
 #percentiles = np.percentile(d_pred, (10, 90), axis=0)

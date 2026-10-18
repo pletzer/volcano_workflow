@@ -45,12 +45,12 @@ process MAKE_GRID {
 }
 
 process INV1D {
-    tag "${point.name}"
+    tag "${lons.first()}..${lons.last()} x ${lats.first()}..${lats.last()}"
     publishDir params.outdir, mode: 'copy'
-    maxForks params.inv1d_parallel_points   // number of grid points run at the same time
 
+    // a block of grid points: all the combinations of lons and lats, and their directories
     input:
-    path point
+    tuple val(lons), val(lats), path(points)
     val periods
 
     // individual files rather than directories, see INV2D
@@ -59,13 +59,44 @@ process INV1D {
 
     script:
     def seed = params.seed != null ? "--seed=${params.seed}" : ''
+    def n_workers = Math.min(params.inv1d_parallel_points, lons.size() * lats.size())
     """
-    inv1D.py --data=${point} --results-dir=1D/${point} \\
+    inv1D.py --data=. --results-dir=1D \\
+        --lons=${lons.join(',')} --lats=${lats.join(',')} --n-workers=${n_workers} \\
         --periods ${periods.join(' ')} ${seed} \\
         --n-iterations=${params.inv1d_n_iterations} \\
         --burnin-iterations=${params.inv1d_burnin_iterations} \\
         --n-chains=${params.inv1d_n_chains}
     """
+}
+
+/*
+ * Split the grid point directories <lon>-<lat> written by MAKE_GRID into blocks of up to
+ * n_lons x n_lats points. Returns one tuple (lons, lats, directories) per block, with the
+ * coordinates as strings, exactly as in the directory names.
+ */
+def gridBlocks(dirs, n_lons, n_lats) {
+    def points = dirs.collect { dir ->
+        def match = dir.name =~ /^(-?[0-9.]+)-(-?[0-9.]+)$/
+        if (!match.matches()) {
+            error "unexpected grid point directory name: ${dir.name}"
+        }
+        [lon: match.group(1), lat: match.group(2), dir: dir]
+    }
+    // sort the coordinates so that the blocks, and hence the cached tasks, are the same in every run
+    def lon_blocks = points.collect { p -> p.lon }.unique().sort { lon -> lon.toDouble() }.collate(n_lons)
+    def lat_blocks = points.collect { p -> p.lat }.unique().sort { lat -> lat.toDouble() }.collate(n_lats)
+    def blocks = []
+    for (lons in lon_blocks) {
+        for (lats in lat_blocks) {
+            def block = points.findAll { p -> p.lon in lons && p.lat in lats }
+            if (block.size() != lons.size() * lats.size()) {
+                error "the grid is not rectangular: ${block.size()} grid points in the block ${lons} x ${lats}"
+            }
+            blocks << tuple(lons, lats, block.collect { p -> p.dir })
+        }
+    }
+    return blocks
 }
 
 workflow {
@@ -83,8 +114,9 @@ workflow {
     def periods = gathered.map { list -> list.collect { item -> item[0] } }
     def dirs = gathered.map { list -> list.collect { item -> item[1] } }
 
-    // one INV1D task per grid point
-    def points = MAKE_GRID(periods, dirs).flatten()
+    // one INV1D task per block of grid points
+    def blocks = MAKE_GRID(periods, dirs)
+        .flatMap { points -> gridBlocks([points].flatten(), params.inv1d_block_lons, params.inv1d_block_lats) }
 
-    INV1D(points, periods)
+    INV1D(blocks, periods)
 }
