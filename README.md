@@ -73,7 +73,7 @@ The workflow in `main.nf` chains the scripts with [Nextflow](https://www.nextflo
 1. `INV2D` runs `inv2D.py` for each period in `input/1st_step_2D/<period>s/data/`,
 2. `MAKE_GRID` runs `make_grid.py` to gather the 2D results into one dispersion curve per grid
    point,
-3. `INV1D` runs `inv1D.py` on batches of grid points.
+3. `INV1D` runs `inv1D.py` for each grid point, at most `inv1d_parallel_points` at a time.
 
 The parameters and profiles are defined in `nextflow.config`. Each task loads the Python module
 and activates `venv/` itself, so only Nextflow needs to be loaded.

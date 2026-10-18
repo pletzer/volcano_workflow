@@ -45,11 +45,12 @@ process MAKE_GRID {
 }
 
 process INV1D {
-    tag "${points[0].name} (${points.size()} points)"
+    tag "${point.name}"
     publishDir params.outdir, mode: 'copy'
+    maxForks params.inv1d_parallel_points   // number of grid points run at the same time
 
     input:
-    path points
+    path point
     val periods
 
     // individual files rather than directories, see INV2D
@@ -59,13 +60,11 @@ process INV1D {
     script:
     def seed = params.seed != null ? "--seed=${params.seed}" : ''
     """
-    for point in ${points}; do
-        inv1D.py --data=\$point --results-dir=1D/\$point \\
-            --periods ${periods.join(' ')} ${seed} \\
-            --n-iterations=${params.inv1d_n_iterations} \\
-            --burnin-iterations=${params.inv1d_burnin_iterations} \\
-            --n-chains=${params.inv1d_n_chains}
-    done
+    inv1D.py --data=${point} --results-dir=1D/${point} \\
+        --periods ${periods.join(' ')} ${seed} \\
+        --n-iterations=${params.inv1d_n_iterations} \\
+        --burnin-iterations=${params.inv1d_burnin_iterations} \\
+        --n-chains=${params.inv1d_n_chains}
     """
 }
 
@@ -84,13 +83,8 @@ workflow {
     def periods = gathered.map { list -> list.collect { item -> item[0] } }
     def dirs = gathered.map { list -> list.collect { item -> item[1] } }
 
-    def points = MAKE_GRID(periods, dirs)
+    // one INV1D task per grid point
+    def points = MAKE_GRID(periods, dirs).flatten()
 
-    // sort the grid points so that the batches, and hence the cached tasks, are the same in every run
-    def batches = points.flatten()
-        .toSortedList { a, b -> a.name <=> b.name }
-        .flatMap()
-        .collate(params.inv1d_batch_size)
-
-    INV1D(batches, periods)
+    INV1D(points, periods)
 }
