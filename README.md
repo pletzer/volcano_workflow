@@ -75,8 +75,8 @@ The workflow in `main.nf` chains the scripts with [Nextflow](https://www.nextflo
    point,
 3. `INV1D` runs `inv1D.py` on batches of grid points.
 
-The parameters and profiles are defined in `nextflow.config`. Each task loads the Python module
-and activates `venv/` itself, so only Nextflow needs to be loaded.
+The parameters and profiles are defined in `nextflow.config`. Each task activates `venv/` itself, so only Nextflow needs to be loaded to use `nextflow run`.
+When running on Mahuika, use `-profile mahuika` to ensure that the correct Python module is loaded for each task.
 
 ### Quick test run
 
@@ -86,7 +86,7 @@ coarse 0.3 degree grid (56 grid points) and short Markov chains. It takes about 
 
 ```bash
 module load Nextflow/26.04.0
-nextflow run main.nf -profile test
+nextflow run main.nf -profile test,mahuika
 ```
 
 The results are written to `output/`:
@@ -100,7 +100,7 @@ whose inputs or parameters have changed. Any parameter can be overridden on the 
 e.g.
 
 ```bash
-nextflow run main.nf -profile test -resume --periods=2.5 --cell_size=0.25
+nextflow run main.nf -profile test,mahuika -resume --periods=2.5 --cell_size=0.25
 ```
 
 Delete `workdir/`, `output/` and `.nextflow*` to start from scratch.
@@ -125,7 +125,7 @@ nextflow run main.nf -profile test \
 
 Relative paths are resolved from the directory where `nextflow` is launched.
 
-## Ho to add tomo_mpi
+## How to add tomo_mpi
 
 Currently, the workflow does not run the `tomo_mpi` step. However, it can be added by following these steps:
 
@@ -164,7 +164,7 @@ def results_2d = INV2D(inputs).map { period, files -> tuple(period, [files].flat
 
 ### Running on Mahuika with Slurm
 
-The `mahuika` profile submits each task as its own Slurm job, with the resources set in
+The `slurm` profile submits each task as its own Slurm job, with the resources set in
 `nextflow.config` (`inv2d_memory`, `inv2d_time`, `inv1d_memory`, `inv1d_time`; `INV1D` requests one
 core per chain unless `--seed` is given). Tasks killed for running out of memory or time are
 resubmitted up to twice, with the memory and time multiplied by the attempt number.
@@ -182,11 +182,11 @@ them out to use your default Slurm account. Arguments after `submit_mahuika.sl` 
 out of time, submit it again to continue where it stopped. The log of the head job is written to
 `slurm-<jobid>.out`.
 
-For a quick check of the Slurm setup, combine the `mahuika` profile with the `test` profile (about
+For a quick check of the Slurm setup, combine the `mahuika` and `slurm` profiles with the `test` profile (about
 5 minutes):
 
 ```bash
-PROFILE=test,mahuika sbatch --account=<project> --time=01:00:00 submit_mahuika.sl --account=<project>
+PROFILE=test,mahuika,slurm sbatch --account=<project> --time=01:00:00 submit_mahuika.sl --account=<project>
 ```
 
 ### Workflow diagram
