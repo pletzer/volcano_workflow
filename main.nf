@@ -22,6 +22,7 @@ process INV2D {
     script:
     def seed = params.seed != null ? "--seed=${params.seed}" : ''
     """
+    source ${params.venv}/bin/activate
     inv2D.py --data=${data} --target-period=${period} --results-dir=${period}s \\
         --cell-size=${params.cell_size} ${seed} \\
         --n-iterations=${params.inv2d_n_iterations} \\
@@ -40,6 +41,7 @@ process MAKE_GRID {
 
     script:
     """
+    source ${params.venv}/bin/activate
     make_grid.py --data ${results} --periods ${periods.join(' ')} --results-dir=grid
     """
 }
@@ -59,6 +61,7 @@ process INV1D {
     script:
     def seed = params.seed != null ? "--seed=${params.seed}" : ''
     """
+    source ${params.venv}/bin/activate
     for point in ${points}; do
         inv1D.py --data=\$point --results-dir=1D/\$point \\
             --periods ${periods.join(' ')} ${seed} \\
