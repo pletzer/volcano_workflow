@@ -1,4 +1,7 @@
 # volcano_workflow
+
+[![CI](https://github.com/pletzer/volcano_workflow/actions/workflows/ci.yml/badge.svg)](https://github.com/pletzer/volcano_workflow/actions/workflows/ci.yml)
+
 Examples of workflows for analysing volcano data
 
 ## Installation
