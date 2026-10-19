@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  nextflow-test:
+    name: nextflow run main.nf -profile test
+    runs-on: ubuntu-latest   # 4 CPUs, 16 GB: matches the test profile (executor.cpus = 4, peak ~8 GB)
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: nf-core/setup-nextflow@v2
+        with:
+          version: '25.10.2'
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      # seislib and bayesbay are only distributed as source and build Cython extensions
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # the bin/ scripts run with "#!/usr/bin/env python3", i.e. the Python set up above
+      - name: Run the test profile
+        env:
+          MPLBACKEND: Agg
+        run: nextflow run main.nf -profile test -ansi-log false
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nextflow-test-output
+          path: |
+            output/
+            .nextflow.log
+          if-no-files-found: ignore
