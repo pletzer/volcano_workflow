@@ -31,16 +31,17 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-          cache: pip
-          cache-dependency-path: requirements.txt
+          # no pip cache: seislib and bayesbay compile with -march=native, so a wheel cached
+          # on one runner can crash with "Illegal instruction" on a runner with another CPU
 
       # each task activates venv/ (params.venv), as set up in the README.
       # seislib and bayesbay are only distributed as source and build Cython extensions
+      # (--no-cache-dir: see above)
       - name: Create the venv
         run: |
           python -m venv venv
           venv/bin/python -m pip install --upgrade pip
-          venv/bin/python -m pip install -r requirements.txt
+          venv/bin/python -m pip install --no-cache-dir -r requirements.txt
 
       - name: Run the test profile
         env:
