@@ -7,70 +7,9 @@
  *   3. INV1D     1D shear-wave velocity inversion, one task per batch of grid points
  */
 
-process INV2D {
-    tag "${period}s"
-    publishDir "${params.outdir}/2D", mode: 'copy'
-
-    input:
-    tuple val(period), path(data)
-
-    // output the individual files rather than the directory: on -resume, publishDir skips
-    // existing targets, so a file deleted from an existing output directory would not be restored
-    output:
-    tuple val(period), path("${period}s/*")
-
-    script:
-    def seed = params.seed != null ? "--seed=${params.seed}" : ''
-    """
-    source ${params.venv}/bin/activate
-    inv2D.py --data=${data} --target-period=${period} --results-dir=${period}s \\
-        --cell-size=${params.cell_size} ${seed} \\
-        --n-iterations=${params.inv2d_n_iterations} \\
-        --burnin-iterations=${params.inv2d_burnin_iterations} \\
-        --n-chains=${params.inv2d_n_chains}
-    """
-}
-
-process MAKE_GRID {
-    input:
-    val periods
-    path results
-
-    output:
-    path "grid/*", type: 'dir'
-
-    script:
-    """
-    source ${params.venv}/bin/activate
-    make_grid.py --data ${results} --periods ${periods.join(' ')} --results-dir=grid
-    """
-}
-
-process INV1D {
-    tag "${points[0].name} (${points.size()} points)"
-    publishDir params.outdir, mode: 'copy'
-
-    input:
-    path points
-    val periods
-
-    // individual files rather than directories, see INV2D
-    output:
-    path "1D/*/*"
-
-    script:
-    def seed = params.seed != null ? "--seed=${params.seed}" : ''
-    """
-    source ${params.venv}/bin/activate
-    for point in ${points}; do
-        inv1D.py --data=\$point --results-dir=1D/\$point \\
-            --periods ${periods.join(' ')} ${seed} \\
-            --n-iterations=${params.inv1d_n_iterations} \\
-            --burnin-iterations=${params.inv1d_burnin_iterations} \\
-            --n-chains=${params.inv1d_n_chains}
-    done
-    """
-}
+include { INV2D } from './modules/inv2d/main.nf'
+include { MAKE_GRID } from './modules/make_grid/main.nf'
+include { INV1D } from './modules/inv1d/main.nf'
 
 workflow {
     // one input directory <period>s/ per period, containing data/
