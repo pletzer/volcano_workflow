@@ -129,7 +129,7 @@ Relative paths are resolved from the directory where `nextflow` is launched.
 
 Currently, the workflow does not run the `tomo_mpi` step. However, it can be added by following these steps:
 
-1. Write the process. Add this section in `main.nf`.
+1. Write the process. Create a new folder in `modules` and a `main.nf` file defining the process.
 ```
 process TOMO2D {
     tag "${period}s"
@@ -153,7 +153,7 @@ process TOMO2D {
     """
 }
 ```
-2. Create a workflow entry. In `main.nf`, add the line
+2. Create a workflow entry. In `main.nf`, add tomo2d to the include lines at the top and add the line
 ```
    TOMO2D(input)
 ```
