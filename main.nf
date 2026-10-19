@@ -22,6 +22,7 @@ process INV2D {
     script:
     def seed = params.seed != null ? "--seed=${params.seed}" : ''
     """
+    source ${params.venv}/bin/activate
     inv2D.py --data=${data} --target-period=${period} --results-dir=${period}s \\
         --cell-size=${params.cell_size} ${seed} \\
         --n-iterations=${params.inv2d_n_iterations} \\
@@ -40,6 +41,7 @@ process MAKE_GRID {
 
     script:
     """
+    source ${params.venv}/bin/activate
     make_grid.py --data ${results} --periods ${periods.join(' ')} --results-dir=grid
     """
 }
@@ -61,6 +63,7 @@ process INV1D {
     def seed = params.seed != null ? "--seed=${params.seed}" : ''
     def n_workers = Math.min(params.inv1d_parallel_points, lons.size() * lats.size())
     """
+    source ${params.venv}/bin/activate
     inv1D.py --data=. --results-dir=1D \\
         --lons=${lons.join(',')} --lats=${lats.join(',')} --n-workers=${n_workers} \\
         --periods ${periods.join(' ')} ${seed} \\
