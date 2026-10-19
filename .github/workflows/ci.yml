@@ -43,6 +43,17 @@ jobs:
           venv/bin/python -m pip install --upgrade pip
           venv/bin/python -m pip install --no-cache-dir -r requirements.txt
 
+      # the INV2D tasks run at the same time and would otherwise each download the Natural Earth
+      # shapefiles of their maps into the cartopy cache, one reading a file the other is writing
+      - name: Download the cartopy map data
+        run: |
+          venv/bin/python - <<'PY'
+          from cartopy.io import shapereader
+          shapereader.natural_earth('10m', 'physical', 'coastline')
+          for scale in ('10m', '50m', '110m'):   # cfeature.OCEAN picks the scale from the map extent
+              shapereader.natural_earth(scale, 'physical', 'ocean')
+          PY
+
       - name: Run the test profile
         env:
           MPLBACKEND: Agg
