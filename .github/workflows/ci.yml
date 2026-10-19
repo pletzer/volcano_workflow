@@ -34,13 +34,14 @@ jobs:
           cache: pip
           cache-dependency-path: requirements.txt
 
+      # each task activates venv/ (params.venv), as set up in the README.
       # seislib and bayesbay are only distributed as source and build Cython extensions
-      - name: Install Python dependencies
+      - name: Create the venv
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          python -m venv venv
+          venv/bin/python -m pip install --upgrade pip
+          venv/bin/python -m pip install -r requirements.txt
 
-      # the bin/ scripts run with "#!/usr/bin/env python3", i.e. the Python set up above
       - name: Run the test profile
         env:
           MPLBACKEND: Agg
