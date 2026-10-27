@@ -1,13 +1,8 @@
 #!/usr/bin/env python3
 import numpy as np
-import matplotlib.pyplot as plt
 import scipy
 from obspy.clients.fdsn import Client
 import obspy as ob
-
-import cartopy.crs as ccrs
-import cartopy.feature as cfeature
-import numpy as np
 
 import gc
 from tqdm.auto import tqdm
@@ -24,11 +19,14 @@ import random
 from joblib.externals.loky import get_reusable_executor
 import defopt
 
+from merge2D import write_results
+
 
 def parse_args(*, data: str, target_period: float, results_dir: str,
                checksum: bool = False, seed: int = None,
                n_iterations: int = 50_000, burnin_iterations: int = 10_000,
-               n_chains: int = 8, cell_size: float = 0.05):
+               n_chains: int = 8, chains_per_batch: int = 4, batches: list[int] = None,
+               partial: bool = False, cell_size: float = 0.05):
     """
     Bayesian 2D Rayleigh-wave velocity inversion using bayesbay.
 
@@ -36,25 +34,36 @@ def parse_args(*, data: str, target_period: float, results_dir: str,
     :param target_period: target period in seconds
     :param results_dir: directory where the results are written
     :param checksum: print checksums of the results (use with --seed for reproducible values)
-    :param seed: seed of the random number generators, for reproducible runs
+    :param seed: seed of the random number generators, for reproducible runs. Batch b
+        is seeded with seed + b, so its results do not depend on the other batches
     :param n_iterations: number of iterations per Markov chain
     :param burnin_iterations: number of burn-in iterations per Markov chain
-    :param n_chains: total number of Markov chains, must be a multiple of 4
+    :param n_chains: total number of Markov chains, must be a multiple of chains_per_batch
+    :param chains_per_batch: number of Markov chains run together and summarised by one
+        set of tessellation statistics
+    :param batches: indices of the batches to run, from 0 to n_chains/chains_per_batch - 1
+        (default all)
+    :param partial: write the results of each batch to batch_<index>.npz in results_dir,
+        to be combined with merge2D.py, instead of the velocity maps
     :param cell_size: size of the grid cells in degrees
     """
     return (data, target_period, results_dir, checksum, seed,
-            n_iterations, burnin_iterations, n_chains, cell_size)
+            n_iterations, burnin_iterations, n_chains, chains_per_batch, batches, partial, cell_size)
 
 
 (disp_dir, target_period, results_dir, checksum, seed,
- n_iterations, burnin_iterations, n_chains_total, cell_size) = defopt.run(parse_args)
-os.makedirs(results_dir, exist_ok=True)
+ n_iterations, burnin_iterations, n_chains_total, chains_per_batch, batches, partial,
+ cell_size) = defopt.run(parse_args)
 
-# bayesbay draws from the global random and numpy.random generators. The chains
-# run in this process (n_jobs=1), so seeding both makes the results reproducible
-if seed is not None:
-    random.seed(seed)
-    np.random.seed(seed)
+if n_chains_total % chains_per_batch != 0:
+    raise ValueError(f"--n-chains must be a multiple of --chains-per-batch ({chains_per_batch})")
+n_batches = n_chains_total // chains_per_batch
+if batches is None:
+    batches = list(range(n_batches))
+for b in batches:
+    if not 0 <= b < n_batches:
+        raise ValueError(f"batch {b} is out of range, there are {n_batches} batches")
+os.makedirs(results_dir, exist_ok=True)
 
 station_coords = np.loadtxt(os.path.join(disp_dir, "sources.dat"),skiprows=1)
 stat_pairs = []
@@ -149,16 +158,7 @@ def forward(state):
     return jacobian @ (1 / interp_vel)
 
 
-chains_per_batch = 4
-if n_chains_total % chains_per_batch != 0:
-    raise ValueError(f"--n-chains must be a multiple of {chains_per_batch}")
-n_batches = n_chains_total // chains_per_batch
-
 save_every = 200
-
-sum_vel = np.zeros(grid_points.shape[0])
-sumsq_vel = np.zeros(grid_points.shape[0])
-n_samples_total = 0
 
 target = bb.likelihood.Target("rayleigh",
                               d_obs,
@@ -168,11 +168,16 @@ target = bb.likelihood.Target("rayleigh",
 
 log_likelihood = bb.likelihood.LogLikelihood(targets=target, fwd_functions=forward)
 
-sum_std = []
-sum_mea = []
-sum_med = []
+extent = np.array([tomo.grid.lonmin, tomo.grid.lonmax, tomo.grid.latmin, tomo.grid.latmax])
+batch_results = []
 
-for b in tqdm(range(n_batches), desc="batches"):
+for b in tqdm(batches, desc="batches"):
+    # bayesbay draws from the global random and numpy.random generators. The chains
+    # run in this process (n_jobs=1), so seeding both makes the results reproducible
+    if seed is not None:
+        random.seed(seed + b)
+        np.random.seed(seed + b)
+
     inversion_batch = bb.BayesianInversion(
         parameterization=parameterization,
         log_likelihood=log_likelihood,
@@ -191,66 +196,25 @@ for b in tqdm(range(n_batches), desc="batches"):
     results_batch = inversion_batch.get_results()
     interp_vel_batch = np.asarray(results_batch['interp_vel'])
 
-    sum_vel += interp_vel_batch.sum(axis=0)
-    sumsq_vel += (interp_vel_batch ** 2).sum(axis=0)
-    n_samples_total += interp_vel_batch.shape[0]
-
     samp_nuclei = results_batch['voronoi.discretization']
     samp_vel = results_batch['voronoi.vel']
     stat_vec = Voronoi2D.get_tessellation_statistics(samp_nuclei, samp_vel, grid_points)
 
-    sum_std += [stat_vec['std']]
-    sum_mea += [stat_vec['mean']]
-    sum_med += [stat_vec['median']]
+    batch_result = dict(batch=b, grid_points=grid_points, extent=extent,
+                        sum_vel=interp_vel_batch.sum(axis=0),
+                        sumsq_vel=(interp_vel_batch ** 2).sum(axis=0),
+                        n_samples=interp_vel_batch.shape[0],
+                        mean=np.asarray(stat_vec['mean']),
+                        median=np.asarray(stat_vec['median']),
+                        std=np.asarray(stat_vec['std']))
+    if partial:
+        np.savez(os.path.join(results_dir, f"batch_{b}.npz"), **batch_result)
+    else:
+        batch_results.append(batch_result)
 
     del inversion_batch, results_batch, interp_vel_batch, samp_nuclei, samp_vel
     gc.collect()
     get_reusable_executor().shutdown(wait=True)
 
-inferred_vel = sum_vel / n_samples_total
-inferred_vel_std = np.sqrt(sumsq_vel / n_samples_total - inferred_vel**2)
-
-stat_mean = np.array(sum_mea).mean(axis=0)
-stat_medi = np.array(sum_med).mean(axis=0)
-stat_vstd = np.array(sum_std).mean(axis=0)
-
-print(f"{n_samples_total} total samples accumulated across {n_batches} batches "
-      f"({chains_per_batch} chains each)")
-
-if checksum:
-    for name, values in [("inferred_vel", inferred_vel), ("inferred_vel_std", inferred_vel_std),
-                         ("mean_vel", stat_mean), ("medi_vel", stat_medi), ("std_vel", stat_vstd)]:
-        print(f"checksum {name} {np.sum(np.abs(values)):.15e}")
-
-
-
-fig = plt.figure(figsize=(7, 6))
-ax = plt.axes(projection=ccrs.PlateCarree())
-ax.set_extent([tomo.grid.lonmin, tomo.grid.lonmax, tomo.grid.latmin, tomo.grid.latmax], crs=ccrs.PlateCarree())
-
-img = ax.tricontourf(*grid_points.T, inferred_vel, levels=50, cmap="seismic_r",
-                      extend='both', transform=ccrs.PlateCarree(), alpha=0.85)
-
-ax.add_feature(cfeature.NaturalEarthFeature('physical', 'coastline', '10m'),
-               linewidth=0.8, edgecolor='black', facecolor='none')
-ax.add_feature(cfeature.OCEAN, facecolor='lightblue', zorder=0)
-
-gl = ax.gridlines(draw_labels=True, linewidth=0.3, alpha=0.5)
-gl.top_labels = False
-gl.right_labels = False
-
-cbar = fig.colorbar(img, ax=ax, aspect=35, pad=0.02, shrink=0.8)
-cbar.set_label('Rayleigh-wave velocity [km/s]')
-fig.suptitle(f'Inferred velocity model, {target_period} s', y=0.93)
-fig.subplots_adjust(top=0.90)
-
-fig.canvas.draw()
-
-plt.savefig(os.path.join(results_dir, "velocity_map.png"), dpi=200)
-np.savetxt(os.path.join(results_dir, "inferred_vel.txt"), inferred_vel)
-np.savetxt(os.path.join(results_dir, "inferred_vel_std.txt"), inferred_vel_std)
-np.savetxt(os.path.join(results_dir, "mean_vel.txt"), stat_mean) #np.array(stat_vec['mean']))
-np.savetxt(os.path.join(results_dir, "medi_vel.txt"), stat_medi) #np.array(stat_vec['median']))
-np.savetxt(os.path.join(results_dir, "std_vel.txt"), stat_vstd) #np.array(stat_vec['std']))
-np.savetxt(os.path.join(results_dir, "grid.txt"), grid_points)
-#plt.show()
+if not partial:
+    write_results(results_dir, target_period, batch_results, checksum)

@@ -54,6 +54,11 @@ Run each script with `--help` for a description of its options.
 `inv2D.py` also accepts `--seed=<int>` for reproducible runs, `--checksum` to print checksums of
 the results, and `--n-iterations`, `--burnin-iterations` and `--n-chains` to change the length
 of the Markov chain Monte Carlo run.
+The chains of `inv2D.py` run in batches of `--chains-per-batch` (default 4), batch `b` being
+seeded with `seed + b`. `--batches` runs only the given batches and `--partial` writes each batch
+to `batch_<b>.npz` instead of the velocity maps; `merge2D.py --batches batch_*.npz` then combines
+them into the same results as a single run of all the batches. The workflow uses this to run the
+batches in parallel.
 `inv2D.py` takes `--cell-size` to set the grid resolution in degrees (default 0.05), and
 `inv1D.py` takes `--periods` to give the periods of the values in `disp.disp` (default 2 to 25 s
 in steps of 0.5 s).
@@ -67,16 +72,20 @@ python -m pytest tests
 `tests/test_inv2D.py` and `tests/test_inv1D.py` run short, seeded inversions with `bin/inv2D.py`
 and `bin/inv1D.py` and check the printed checksums against reference values in the test files. If
 a change is expected to modify the results, update the reference values there.
+`tests/test_inv2D.py` also checks that running the batches separately and merging them with
+`bin/merge2D.py` gives the same results.
 `tests/test_make_grid.py` checks `bin/make_grid.py` on small synthetic data.
 
 ## Running the workflow
 
 The workflow in `main.nf` chains the scripts with [Nextflow](https://www.nextflow.io/):
 
-1. `INV2D` runs `inv2D.py` for each period in `input/1st_step_2D/<period>s/data/`,
-2. `MAKE_GRID` runs `make_grid.py` to gather the 2D results into one dispersion curve per grid
+1. `INV2D` runs `inv2D.py` for each period in `input/1st_step_2D/<period>s/data/` and each
+   batch of `inv2d_chains_per_task` of the `inv2d_n_chains` Markov chains, all in parallel,
+2. `MERGE2D` runs `merge2D.py` to combine the batches of each period into its 2D velocity maps,
+3. `MAKE_GRID` runs `make_grid.py` to gather the 2D results into one dispersion curve per grid
    point,
-3. `INV1D` runs `inv1D.py` on blocks of up to `inv1d_block_lons` x `inv1d_block_lats` grid
+4. `INV1D` runs `inv1D.py` on blocks of up to `inv1d_block_lons` x `inv1d_block_lats` grid
    points, inverting `inv1d_parallel_points` points of a block at the same time.
 
 The parameters and profiles are defined in `nextflow.config`. Each task activates `venv/` itself, so only Nextflow needs to be loaded to use `nextflow run`.
