@@ -2,17 +2,41 @@
 
 /*
  * Bayesian surface-wave tomography of the Auckland volcanic field:
- *   1. INV2D     2D Rayleigh-wave velocity inversion, one task per period
- *   2. MAKE_GRID gather the 2D results into one dispersion curve per grid point
- *   3. INV1D     1D shear-wave velocity inversion, one task per batch of grid points
+ *   1. INV2D     2D Rayleigh-wave velocity inversion, one task per period and batch of chains
+ *   2. MERGE2D   combine the batches of chains of each period into the 2D velocity maps
+ *   3. MAKE_GRID gather the 2D results into one dispersion curve per grid point
+ *   4. INV1D     1D shear-wave velocity inversion, one task per batch of grid points
  */
 
 process INV2D {
+    tag "${period}s batch ${batch}"
+
+    input:
+    tuple val(period), path(data), val(batch)
+
+    output:
+    tuple val(period), path("batch_${batch}.npz")
+
+    script:
+    def seed = params.seed != null ? "--seed=${params.seed}" : ''
+    """
+    source ${params.venv}/bin/activate
+    inv2D.py --data=${data} --target-period=${period} --results-dir=. \\
+        --cell-size=${params.cell_size} ${seed} \\
+        --n-iterations=${params.inv2d_n_iterations} \\
+        --burnin-iterations=${params.inv2d_burnin_iterations} \\
+        --n-chains=${params.inv2d_n_chains} \\
+        --chains-per-batch=${params.inv2d_chains_per_task} \\
+        --batches=${batch} --partial
+    """
+}
+
+process MERGE2D {
     tag "${period}s"
     publishDir "${params.outdir}/2D", mode: 'copy'
 
     input:
-    tuple val(period), path(data)
+    tuple val(period), path(batches)
 
     // output the individual files rather than the directory: on -resume, publishDir skips
     // existing targets, so a file deleted from an existing output directory would not be restored
@@ -20,14 +44,9 @@ process INV2D {
     tuple val(period), path("${period}s/*")
 
     script:
-    def seed = params.seed != null ? "--seed=${params.seed}" : ''
     """
     source ${params.venv}/bin/activate
-    inv2D.py --data=${data} --target-period=${period} --results-dir=${period}s \\
-        --cell-size=${params.cell_size} ${seed} \\
-        --n-iterations=${params.inv2d_n_iterations} \\
-        --burnin-iterations=${params.inv2d_burnin_iterations} \\
-        --n-chains=${params.inv2d_n_chains}
+    merge2D.py --batches ${batches} --target-period=${period} --results-dir=${period}s
     """
 }
 
@@ -89,17 +108,15 @@ def gridBlocks(dirs, n_lons, n_lats) {
     // sort the coordinates so that the blocks, and hence the cached tasks, are the same in every run
     def lon_blocks = points.collect { p -> p.lon }.unique().sort { lon -> lon.toDouble() }.collate(n_lons)
     def lat_blocks = points.collect { p -> p.lat }.unique().sort { lat -> lat.toDouble() }.collate(n_lats)
-    def blocks = []
-    for (lons in lon_blocks) {
-        for (lats in lat_blocks) {
+    return lon_blocks.collectMany { lons ->
+        lat_blocks.collect { lats ->
             def block = points.findAll { p -> p.lon in lons && p.lat in lats }
             if (block.size() != lons.size() * lats.size()) {
                 error "the grid is not rectangular: ${block.size()} grid points in the block ${lons} x ${lats}"
             }
-            blocks << tuple(lons, lats, block.collect { p -> p.dir })
+            tuple(lons, lats, block.collect { p -> p.dir })
         }
     }
-    return blocks
 }
 
 workflow {
@@ -109,8 +126,16 @@ workflow {
         .map { dir -> tuple(dir.name.replaceAll(/s$/, ''), dir.resolve('data')) }
         .filter { period, _data -> selected == null || (period.toFloat() in selected) }
 
+    // one INV2D task per period and batch of chains, merged per period once all its batches are done
+    if (params.inv2d_n_chains % params.inv2d_chains_per_task != 0) {
+        error "inv2d_n_chains (${params.inv2d_n_chains}) must be a multiple of inv2d_chains_per_task (${params.inv2d_chains_per_task})"
+    }
+    def n_batches = params.inv2d_n_chains.intdiv(params.inv2d_chains_per_task)
+    def batches = INV2D(inputs.combine(channel.of(0..<n_batches)))
+        .groupTuple(size: n_batches)
+
     // recover the results directory of each period from its files
-    def results_2d = INV2D(inputs).map { period, files -> tuple(period, [files].flatten()[0].parent) }
+    def results_2d = MERGE2D(batches).map { period, files -> tuple(period, [files].flatten()[0].parent) }
 
     // sort by period so that the gathered dispersion curves are in a fixed order
     def gathered = results_2d.toSortedList { a, b -> a[0].toFloat() <=> b[0].toFloat() }
