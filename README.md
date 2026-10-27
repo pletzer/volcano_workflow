@@ -177,7 +177,8 @@ def results_2d = INV2D(inputs).map { period, files -> tuple(period, [files].flat
 
 ### Running on Mahuika with Slurm
 
-The `slurm` profile submits each task as its own Slurm job, with the resources set in
+The `slurm` profile submits each task, except the short `MERGE2D` tasks that run in the head
+job, as its own Slurm job, with the resources set in
 `nextflow.config` (`inv2d_memory`, `inv2d_time`, `inv1d_memory`, `inv1d_time`; `INV1D` requests one
 core per chain unless `--seed` is given). Tasks killed for running out of memory or time are
 resubmitted up to twice, with the memory and time multiplied by the attempt number.
