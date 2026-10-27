@@ -108,17 +108,15 @@ def gridBlocks(dirs, n_lons, n_lats) {
     // sort the coordinates so that the blocks, and hence the cached tasks, are the same in every run
     def lon_blocks = points.collect { p -> p.lon }.unique().sort { lon -> lon.toDouble() }.collate(n_lons)
     def lat_blocks = points.collect { p -> p.lat }.unique().sort { lat -> lat.toDouble() }.collate(n_lats)
-    def blocks = []
-    for (lons in lon_blocks) {
-        for (lats in lat_blocks) {
+    return lon_blocks.collectMany { lons ->
+        lat_blocks.collect { lats ->
             def block = points.findAll { p -> p.lon in lons && p.lat in lats }
             if (block.size() != lons.size() * lats.size()) {
                 error "the grid is not rectangular: ${block.size()} grid points in the block ${lons} x ${lats}"
             }
-            blocks << tuple(lons, lats, block.collect { p -> p.dir })
+            tuple(lons, lats, block.collect { p -> p.dir })
         }
     }
-    return blocks
 }
 
 workflow {
