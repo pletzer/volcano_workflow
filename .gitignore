@@ -222,3 +222,4 @@ __marimo__/
 .nextflow.log*
 /output/
 /workdir/
+/runInfo/
