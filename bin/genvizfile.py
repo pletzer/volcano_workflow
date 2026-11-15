@@ -49,7 +49,7 @@ def build_coastline(lines):
     return polydata
 
 
-def main(*, results_dir: str, output: str):
+def main(*, results_dir: str, period: str, output: str="output.vtm"):
     """
     Convert the inv2D.py results into a VTK multiblock (.vtm) file with two blocks:
     "velocity", a rectilinear grid with the velocity fields stored as cell data, and
@@ -57,10 +57,11 @@ def main(*, results_dir: str, output: str):
     files in a directory next to the .vtm file, named after it without the suffix.
 
     :param results_dir: directory containing grid.txt and the *_vel*.txt files
+    :param period: period chosen for the visualisation
     :param output: name of the output .vtm file
     """
     # cell centres (lon, lat), longitude varies fastest
-    grid = np.loadtxt(os.path.join(results_dir, "grid.txt"))
+    grid = np.loadtxt(os.path.join(results_dir+'/2D/'+period+'/', "grid.txt"))
     lons = np.unique(grid[:, 0])
     lats = np.unique(grid[:, 1])
     nx, ny = len(lons), len(lats)

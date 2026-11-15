@@ -15,7 +15,7 @@ import defopt
 def parse_args(*, data: str, results_dir: str,
                lons: str = None, lats: str = None, n_workers: int = None,
                checksum: bool = False, seed: int = None,
-               n_iterations: int = 50_000, burnin_iterations: int = 10_000,
+               n_iterations: int = 100_000, burnin_iterations: int = 50_000,
                n_chains: int = 8, periods: list[float] = None):
     """
     Bayesian 1D shear-wave velocity inversion of a Rayleigh-wave group-velocity
@@ -96,6 +96,7 @@ def run_point(disp_dir, results_dir, *, checksum, seed, n_iterations, burnin_ite
     gd = GroupDispersion(THICKNESS, VP, VS, RHO)
     group_vel = gd(PERIODS, mode=0, wave="rayleigh").velocity
     d_obs = np.loadtxt(os.path.join(disp_dir, "disp.disp"), ndmin=1) #phase_vel + np.random.normal(0, RAYLEIGH_STD, phase_vel.size)
+    #d_std = np.loadtxt(os.path.join(disp_dir, "std.disp"), ndmin=1)
     if d_obs.shape != PERIODS.shape:
         raise ValueError(f"{disp_dir}/disp.disp has {d_obs.size} values but there are {PERIODS.size} periods")
 
@@ -157,7 +158,8 @@ def run_point(disp_dir, results_dir, *, checksum, seed, n_iterations, burnin_ite
         return d_pred
 
     target = bb.likelihood.Target("rayleigh", 
-                       d_obs, 
+                       d_obs,
+                       #covariance_mat_inv=1/d_std) 
                        std_min=0.001, 
                        std_max=0.2, 
                        std_perturb_std=0.002)

@@ -24,7 +24,7 @@ from merge2D import write_results
 
 def parse_args(*, data: str, target_period: float, results_dir: str,
                checksum: bool = False, seed: int = None,
-               n_iterations: int = 50_000, burnin_iterations: int = 10_000,
+               n_iterations: int = 100_000, burnin_iterations: int = 50_000,
                n_chains: int = 8, chains_per_batch: int = 4, batches: list[int] = None,
                partial: bool = False, cell_size: float = 0.05):
     """
@@ -89,13 +89,14 @@ for i in range(N):
 stat_pairs = np.array(stat_pairs)
 stat_dist = np.array(stat_dist)
 travel_times = np.loadtxt(os.path.join(disp_dir, "observed_t.dat"),usecols=1)
+v_std = np.loadtxt(os.path.join(disp_dir, "observed_t.dat"),usecols=2)
 print(np.shape(travel_times))
 mask = travel_times > 0
 #mask_mat = mask[:,None]
 #mask_mat = np.concatenate((mask_mat,mask_mat,mask_mat,mask_mat),axis=1)
 #print(np.shape(mask_mat))
-d_obs = travel_times[mask]/stat_dist[mask]
-
+d_obs = travel_times[mask] #/stat_dist[mask]
+d_std = 1/d_obs - 1/(d_obs+v_std[mask])
 period_tol = 0.5
 
 
@@ -161,10 +162,8 @@ def forward(state):
 save_every = 200
 
 target = bb.likelihood.Target("rayleigh",
-                              d_obs,
-                              std_min=0.05,
-                              std_max=0.2,
-                              std_perturb_std=0.002)
+                              1/d_obs,
+                              covariance_mat_inv=1/d_std)
 
 log_likelihood = bb.likelihood.LogLikelihood(targets=target, fwd_functions=forward)
 
