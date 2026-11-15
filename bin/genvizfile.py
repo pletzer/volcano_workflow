@@ -61,7 +61,8 @@ def main(*, results_dir: str, period: str, output: str="output.vtm"):
     :param output: name of the output .vtm file
     """
     # cell centres (lon, lat), longitude varies fastest
-    grid = np.loadtxt(os.path.join(results_dir+'/2D/'+period+'/', "grid.txt"))
+    data_dir = os.path.join(results_dir, "2D", period)
+    grid = np.loadtxt(os.path.join(data_dir, "grid.txt"))
     lons = np.unique(grid[:, 0])
     lats = np.unique(grid[:, 1])
     nx, ny = len(lons), len(lats)
@@ -83,7 +84,10 @@ def main(*, results_dir: str, period: str, output: str="output.vtm"):
     rgrid.SetYCoordinates(numpy_to_vtk(yedges, deep=True))
     rgrid.SetZCoordinates(numpy_to_vtk(np.zeros(1), deep=True))
 
-    for filename in sorted(glob.glob(os.path.join(results_dir, "*_vel*.txt"))):
+    filenames = sorted(glob.glob(os.path.join(data_dir, "*_vel*.txt")))
+    if not filenames:
+        raise FileNotFoundError(f"no *_vel*.txt files found in {data_dir}")
+    for filename in filenames:
         values = np.loadtxt(filename)
         if values.shape != (grid.shape[0],):
             raise ValueError(f"{filename} has shape {values.shape}, expected ({grid.shape[0]},)")
