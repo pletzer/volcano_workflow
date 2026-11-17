@@ -181,7 +181,7 @@ The `slurm` profile submits each task, except the short `MERGE2D` tasks that run
 job, as its own Slurm job, with the resources set in
 `nextflow.config` (`inv2d_memory`, `inv2d_time`, `inv1d_memory`, `inv1d_time`; `INV1D` requests
 `inv1d_cpus_per_point` cores (at most one per chain) per grid point inverted at once, or one core
-when `--seed` is given. Tasks killed for running out of memory or time are resubmitted up to
+when `--seed` is given). Tasks killed for running out of memory or time are resubmitted up to
 three times, with the memory doubled on each retry (time is multiplied by the attempt number).
 
 The Nextflow head process must keep running until all the tasks have completed, so run it as a
