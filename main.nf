@@ -119,7 +119,33 @@ def gridBlocks(dirs, n_lons, n_lats) {
     }
 }
 
+/*
+ * Nextflow silently accepts any --option on the command line, so check them against the
+ * parameters declared in nextflow.config. Keep this list in sync with the params there.
+ */
+def checkParams() {
+    def known = [
+        'input', 'outdir', 'periods', 'seed', 'account', 'timestamp',
+        'python_module', 'venv',
+        'cell_size', 'inv2d_n_iterations', 'inv2d_burnin_iterations', 'inv2d_n_chains',
+        'inv2d_chains_per_task', 'inv2d_memory', 'inv2d_time',
+        'inv1d_n_iterations', 'inv1d_burnin_iterations', 'inv1d_n_chains',
+        'inv1d_block_lons', 'inv1d_block_lats', 'inv1d_parallel_points', 'inv1d_memory', 'inv1d_time',
+    ] as Set
+    def unknown = params.keySet().findAll { name -> !(name in known) }
+    if (unknown) {
+        def hints = unknown.collect { name ->
+            // Nextflow turns --inv2d-n-chains into inv2dNChains
+            def snake = name.replace('-', '_').replaceAll(/([A-Z])/) { _all, c -> '_' + c.toLowerCase() }
+            snake in known ? "--${name} (did you mean --${snake}?)" : "--${name}"
+        }
+        error "unknown parameter(s): ${hints.join(', ')}\nknown parameters: ${known.sort().join(', ')}"
+    }
+}
+
 workflow {
+    checkParams()
+
     // one input directory <period>s/ per period, containing data/
     def selected = params.periods != null ? params.periods.toString().tokenize(',')*.trim()*.toFloat() : null
     def inputs = channel.fromPath("${params.input}/*s", type: 'dir')
