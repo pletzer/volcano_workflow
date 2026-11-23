@@ -130,7 +130,8 @@ def checkParams() {
         'cell_size', 'inv2d_n_iterations', 'inv2d_burnin_iterations', 'inv2d_n_chains',
         'inv2d_chains_per_task', 'inv2d_memory', 'inv2d_time',
         'inv1d_n_iterations', 'inv1d_burnin_iterations', 'inv1d_n_chains',
-        'inv1d_block_lons', 'inv1d_block_lats', 'inv1d_parallel_points', 'inv1d_memory', 'inv1d_time',
+        'inv1d_block_lons', 'inv1d_block_lats', 'inv1d_parallel_points', 'inv1d_cpus_per_point',
+        'inv1d_memory', 'inv1d_time',
     ] as Set
     def unknown = params.keySet().findAll { name -> !(name in known) }
     if (unknown) {
